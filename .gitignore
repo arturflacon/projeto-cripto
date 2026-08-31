@@ -1,0 +1,13 @@
+# Dados coletados (não versionar dumps grandes)
+data/raw/*.json
+data/processed/*.parquet
+
+# Chaves e ambiente
+.env
+*.key
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
