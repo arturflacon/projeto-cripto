@@ -1,72 +1,174 @@
-# Sistema Inteligente de Mapeamento e Análise do Mercado de Criptomoedas
+# Análise do Mercado de Criptomoedas — Solana
 
-Projeto integrador da disciplina de Aprendizagem de Máquina. Pipeline de coleta,
-preparação, análise, agrupamento e classificação de dados do mercado de
-criptomoedas. **Trabalho educacional — não constitui recomendação de investimento.**
+Projeto integrador da disciplina de Aprendizagem de Máquina. Pipeline completo de
+coleta, limpeza, análise exploratória, agrupamento, classificação e regressão sobre
+a série histórica diária da **Solana**.
+
+> **Trabalho acadêmico.** Nada neste repositório é recomendação de investimento. Os
+> modelos produzem estimativas condicionadas ao período analisado, e a avaliação
+> formal mostra desempenho **próximo do acaso** para previsão de direção — ver
+> [Resultados](#resultados).
+
+## Restrição central: um único ativo
+
+O projeto usa apenas a Solana (id CoinGecko `solana`). Como há um só ativo, o
+agrupamento e o "mapa do mercado" não são feitos **entre ativos** — eles são
+reenquadrados sobre o **tempo**:
+
+- cada observação diária vira um vetor de 13 atributos;
+- o agrupamento identifica **regimes temporais** (calmo, tendência, estresse);
+- o "mapa" é uma projeção **PCA das observações diárias**, colorida por regime;
+- classificação e regressão operam sobre a própria série da Solana.
+
+## Instalação
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate          # Linux/macOS: source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+## Reprodutibilidade
+
+A API da CoinGecko devolve uma janela **móvel** dos últimos 365 dias: rodar a coleta
+em outra data produz outra série, e os números dos relatórios deixam de bater.
+
+Por isso o repositório versiona um **snapshot congelado** em
+`data/snapshot/solana_365d.csv` (2025-09-01 a 2026-08-31). Para reproduzir
+exatamente os resultados entregues:
+
+```bash
+USAR_SNAPSHOT=1 python src/collect.py     # Windows PowerShell: $env:USAR_SNAPSHOT=1
+```
+
+Sem a variável, `collect.py` busca dados novos na API — é o diferencial de
+"atualização automática" do projeto, não o caminho da reprodução.
+
+## Pipeline
+
+Rodar em ordem, a partir da raiz do projeto:
+
+| # | Comando | Produz |
+|---|---|---|
+| 1 | `python src/collect.py` | `data/processed/precos.parquet` |
+| 2 | `python src/preprocess.py` | `precos_limpo.parquet` + `reports/relatorio_qualidade_dados.md` |
+| 3 | `python src/features.py` | `atributos.parquet` (274 linhas × 13 atributos) |
+| 4 | `python src/clustering.py` | `regimes.parquet` + `reports/relatorio_regimes.md` + 4 figuras |
+| 5 | `python src/classification.py` | `reports/comparacao_classificadores.md` + matriz de confusão |
+| 6 | `python src/regression.py` | `reports/relatorio_volatilidade.md` + figura |
+| 7 | `python src/prever.py` | `previsoes.parquet` — classificação do dia seguinte |
+
+Análise exploratória (Encontros 5-6), com 7 visualizações e interpretação escrita:
+
+```bash
+jupyter notebook notebooks/eda_solana.ipynb
+```
+
+Painel interativo (Encontro 13) — indicadores, regimes, eventos atípicos e a
+classificação do dia seguinte:
+
+```bash
+streamlit run app/dashboard.py
+```
+
+## Verificação de vazamento temporal
+
+O argumento central do trabalho é metodológico: **os atributos usam apenas dados até
+o instante `t`; só o rótulo olha para o futuro, e só no treino.** Isso não fica
+apenas escrito — é verificado:
+
+```bash
+python tests/test_vazamento.py
+```
+
+São 8 verificações. A principal recomputa os atributos sobre uma série **truncada** e
+exige que os valores anteriores ao corte sejam idênticos — se algum atributo olhasse
+adiante, truncar mudaria o passado. O teste foi validado contra quatro tipos de
+vazamento injetado de propósito (`shift` negativo, janela centrada, normalização com
+estatística global e ranking sobre a série inteira), e detecta os quatro.
 
 ## Estrutura
 
 ```
 projeto-cripto/
 ├── data/
-│   ├── raw/          # respostas brutas da API (não versionadas)
-│   └── processed/    # tabela processada em Parquet
-├── notebooks/        # análise exploratória
+│   ├── raw/          # respostas brutas da API (não versionado)
+│   ├── snapshot/     # série congelada, VERSIONADA — base da reprodução
+│   └── processed/    # tabelas geradas pelo pipeline (não versionado)
+├── notebooks/
+│   └── eda_solana.ipynb      # EDA (Encontros 5-6)
 ├── src/
-│   ├── collect.py        # coleta (Encontro 3)     ✅ pronto
-│   ├── preprocess.py     # limpeza (Encontro 4)
-│   ├── features.py       # atributos (Encontro 7)
-│   ├── clustering.py     # agrupamento (Encontros 8-9)
-│   └── classification.py # classificação (Encontros 10-11)
-├── app/              # dashboard/interface
-├── reports/          # relatório técnico
+│   ├── collect.py            # coleta CoinGecko / snapshot   (Enc. 3)
+│   ├── preprocess.py         # limpeza e relatório de qualidade (Enc. 4)
+│   ├── features.py           # 13 atributos + rótulo, sem vazamento (Enc. 7)
+│   ├── clustering.py         # regimes: K-Means, Ward, DBSCAN  (Enc. 8-9)
+│   ├── classification.py     # direção do dia seguinte        (Enc. 10-11)
+│   ├── regression.py         # volatilidade futura            (Enc. 12)
+│   └── prever.py             # classificação do dia seguinte, walk-forward
+├── tests/
+│   └── test_vazamento.py     # 8 verificações de vazamento temporal
+├── app/
+│   └── dashboard.py          # painel Streamlit               (Enc. 13)
+├── reports/                  # relatórios .md e figuras
 ├── requirements.txt
 └── README.md
 ```
 
-## Instalação
+## Dados
 
-```bash
-python -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-## Coleta de dados
-
-Baixa as N maiores moedas por capitalização (CoinGecko) e salva uma tabela longa
-`data/processed/precos.parquet` — uma observação por (ativo, data).
-
-```bash
-python src/collect.py
-```
-
-Chave Demo opcional (100 req/min, 10k chamadas/mês) — sem ela, usa a rota pública:
-
-```bash
-export COINGECKO_API_KEY="sua_chave"   # opcional
-python src/collect.py
-```
-
-Parâmetros no topo de `src/collect.py`: `N_MOEDAS` (30–100), `DIAS` (janela
-histórica), `VS_CURRENCY`.
-
-### Tabela gerada (`precos.parquet`)
+`collect.py` baixa a série diária da Solana (endpoint `/coins/{id}/market_chart`,
+`days=365` — acima de 90 dias a API já devolve granularidade diária). A tabela tem
+uma observação por (ativo, data):
 
 | coluna | descrição |
 |---|---|
-| id | identificador CoinGecko (ex.: `bitcoin`) |
-| simbolo | símbolo (ex.: `btc`) |
-| nome | nome do ativo |
-| data | data da observação (UTC) |
-| preco | preço de fechamento em `VS_CURRENCY` |
-| capitalizacao | capitalização de mercado |
-| volume | volume negociado no dia |
-| fonte | origem dos dados (`coingecko`) |
-| coletado_em | momento da coleta (UTC, ISO 8601) |
+| `id` | identificador CoinGecko (`solana`) |
+| `simbolo` | símbolo (`sol`) |
+| `nome` | nome do ativo (`Solana`) |
+| `data` | data da observação (UTC, sem hora) |
+| `preco` | preço em `VS_CURRENCY` (padrão `usd`) |
+| `capitalizacao` | capitalização de mercado |
+| `volume` | volume negociado no dia |
+| `fonte` | origem dos dados (`coingecko`) |
+| `coletado_em` | momento da coleta (UTC, ISO 8601) |
 
-## Reprodutibilidade
+Parâmetros no topo de `src/collect.py`: `MOEDA_ID` (ou a variável de ambiente
+`COINGECKO_COIN_ID`), `DIAS`, `VS_CURRENCY`. Chave Demo opcional da CoinGecko
+(100 req/min) pela variável `COINGECKO_API_KEY`.
 
-Os dados brutos ficam em `data/raw/` e a versão processada em `data/processed/`.
-Para a avaliação final, recomenda-se congelar uma cópia do Parquet e versioná-la
-(ou entregá-la em separado), garantindo reprodução mesmo se a API mudar.
+## Resultados
+
+Os relatórios completos estão em `reports/`. Em resumo:
+
+**Qualidade dos dados** — a série veio limpa: 365 dias, sem duplicatas, sem lacunas
+e sem valores inválidos.
+
+**EDA** — três análises independentes convergem para o mesmo diagnóstico: a série
+carrega informação sobre a **magnitude** dos movimentos e quase nenhuma sobre a
+**direção**. A autocorrelação dos retornos é indistinguível de ruído branco, mas a
+de |retornos| é significativa nas defasagens 1-3 e 5; o volume tem correlação
++0,003 com a direção e +0,600 com a magnitude.
+
+**Regimes** (k=3 por silhouette) — R0 "em alta" (11 dias), R1 "lateral" (202 dias) e
+R2 "turbulento, em queda" (61 dias). O regime R2 isola sozinho os três episódios de
+estresse do período, embora o agrupamento não receba nenhuma informação de data.
+
+**Classificação da direção** — o melhor modelo (Perceptron) alcançou acurácia
+balanceada de 0,575 contra 0,500 do melhor baseline. Com 83 dias de teste isso fica
+a **1,4 desvios** do acaso: dentro do que uma moeda honesta produziria. O resultado
+é consistente com o que a EDA já indicava.
+
+**Regressão de volatilidade** — nenhuma das 16 configurações testadas (4 horizontes ×
+4 modelos) obteve R² médio positivo no walk-forward do treino. O relatório documenta
+uma armadilha instrutiva: escolher o horizonte pelo R² **do teste** levaria a
+reportar R² = +0,398, mas o treino coloca essa mesma configuração em 11º lugar entre
+16 — era sorte da janela de teste, não capacidade preditiva.
+
+### A leitura honesta
+
+Prever a direção diária de um criptoativo, sem vazamento e com split temporal, fica
+perto de cara-ou-coroa. **Isso não é falha de execução** — é a estrutura do dado, e a
+EDA já antecipava. O que sustenta o trabalho é o rigor do protocolo: atributos só com
+passado (verificado por teste automatizado), rótulo isolado no futuro, divisão
+cronológica, padronização dentro do `Pipeline`, baselines medidos antes dos modelos e
+seleção de hiperparâmetros que nunca enxerga o conjunto de teste.

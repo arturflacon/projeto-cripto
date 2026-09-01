@@ -50,6 +50,18 @@ MAX_TENTATIVAS = 4           # re-tentativas em caso de 429/erro de rede
 RAIZ = Path(__file__).resolve().parents[1]   # .../projeto-cripto
 DIR_RAW = RAIZ / "data" / "raw"
 DIR_PROC = RAIZ / "data" / "processed"
+SNAPSHOT = RAIZ / "data" / "snapshot" / "solana_365d.csv"
+
+# Snapshot congelado e versionado no git. A API devolve uma janela **móvel** de
+# DIAS dias, então rodar a coleta em outra data produz outra série e os números
+# dos relatórios deixam de bater. Para reproduzir exatamente os resultados
+# entregues, rode com o snapshot:
+#     USAR_SNAPSHOT=1 python src/collect.py
+# Sem a variável, o script busca dados novos na API (o diferencial de
+# "atualização automática" do projeto).
+USAR_SNAPSHOT = os.environ.get("USAR_SNAPSHOT", "").strip().lower() in {
+    "1", "true", "sim", "s",
+}
 
 
 # ----------------------------------------------------------------------
@@ -131,9 +143,30 @@ def serie_para_df(bruto: dict, meta: dict) -> pd.DataFrame:
 # ----------------------------------------------------------------------
 # 3. Orquestração
 # ----------------------------------------------------------------------
+def carregar_snapshot() -> pd.DataFrame:
+    """Lê a série congelada e versionada, sem tocar na API."""
+    if not SNAPSHOT.exists():
+        raise SystemExit(f"Snapshot não encontrado: {SNAPSHOT}")
+    dados = pd.read_csv(SNAPSHOT, parse_dates=["data"])
+    dados["data"] = dados["data"].dt.date
+    return dados.sort_values(["id", "data"]).reset_index(drop=True)
+
+
 def main() -> None:
     DIR_RAW.mkdir(parents=True, exist_ok=True)
     DIR_PROC.mkdir(parents=True, exist_ok=True)
+    destino = DIR_PROC / "precos.parquet"
+
+    if USAR_SNAPSHOT:
+        print(f"Usando snapshot congelado: {SNAPSHOT.relative_to(RAIZ)}")
+        dados = carregar_snapshot()
+        dados.to_parquet(destino, index=False)
+        print(
+            f"\nOK: {len(dados)} linhas, {dados['id'].nunique()} ativo(s), "
+            f"de {dados['data'].min()} a {dados['data'].max()}"
+        )
+        print(f"Arquivo salvo em: {destino}")
+        return
 
     momento = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -153,8 +186,6 @@ def main() -> None:
     dados["fonte"] = "coingecko"
     dados["coletado_em"] = momento
     dados = dados.sort_values(["id", "data"]).reset_index(drop=True)
-
-    destino = DIR_PROC / "precos.parquet"
     dados.to_parquet(destino, index=False)
 
     print(

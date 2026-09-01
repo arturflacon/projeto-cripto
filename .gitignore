@@ -1,6 +1,12 @@
-# Dados coletados (não versionar dumps grandes)
+# Dados coletados (não versionar dumps grandes nem saídas regeráveis)
 data/raw/*.json
 data/processed/*.parquet
+
+# Exceção: o snapshot congelado É versionado — é o que garante que a banca
+# reproduza exatamente os números dos relatórios. A API devolve uma janela
+# móvel, então sem ele os resultados mudam a cada execução.
+!data/snapshot/
+!data/snapshot/*.csv
 
 # Chaves e ambiente
 .env
