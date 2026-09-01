@@ -86,9 +86,18 @@ def _ajustar_e_classificar(
 
 
 def classificar_historico(
-    rotulados: pd.DataFrame, n_dias: int = DIAS_HISTORICO, nome_modelo: str = MODELO
+    rotulados: pd.DataFrame,
+    precos_por_data: pd.Series,
+    n_dias: int = DIAS_HISTORICO,
+    nome_modelo: str = MODELO,
 ) -> pd.DataFrame:
-    """Reclassifica os ``n_dias`` finais, cada um com um modelo ajustado só no passado."""
+    """Reclassifica os ``n_dias`` finais, cada um com um modelo ajustado só no passado.
+
+    ``precos_por_data`` cobre a série inteira, inclusive o dia pendente. É o que
+    permite mostrar o preço do dia-alvo até na última linha do histórico: aquele
+    preço não está em ``rotulados`` (o último dia da série não tem rótulo), mas
+    existe — é justamente o que tornou o dia anterior rotulável.
+    """
     inicio = max(len(rotulados) - n_dias, 1)
     registros = []
 
@@ -96,10 +105,13 @@ def classificar_historico(
         dia = rotulados.iloc[[pos]]
         previsto = _ajustar_e_classificar(rotulados.iloc[:pos], dia, nome_modelo)
         observado = int(dia["y"].iloc[0])
+        data_base = dia["data"].iloc[0]
+        data_alvo = data_base + pd.Timedelta(days=1)
         registros.append({
-            "data_base": dia["data"].iloc[0],
-            "data_alvo": dia["data"].iloc[0] + pd.Timedelta(days=1),
+            "data_base": data_base,
+            "data_alvo": data_alvo,
             "preco_base": float(dia["preco"].iloc[0]),
+            "preco_alvo": float(precos_por_data[data_alvo]),
             "classificado": previsto,
             "observado": observado,
             "acertou": bool(previsto == observado),
@@ -124,6 +136,7 @@ def classificar_dia_seguinte(
         "data_base": dia["data"].iloc[0],
         "data_alvo": dia["data"].iloc[0] + pd.Timedelta(days=1),
         "preco_base": float(dia["preco"].iloc[0]),
+        "preco_alvo": pd.NA,          # o dia-alvo ainda não aconteceu
         "classificado": previsto,
         "observado": pd.NA,
         "acertou": pd.NA,
@@ -134,47 +147,50 @@ def classificar_dia_seguinte(
 # ----------------------------------------------------------------------
 # 3. Apresentação
 # ----------------------------------------------------------------------
+LARGURA = 78
+
+
 def imprimir_historico(historico: pd.DataFrame) -> None:
-    """Mostra os dias recentes já com resultado conhecido."""
-    print(
-        f"\nÚltimos {len(historico)} dias — cada um classificado por um modelo "
-        "ajustado só com os dias anteriores:\n"
-    )
-    print(f"  {'dia alvo':<12} {'preço base':>11}  {'classificado':<14} "
-          f"{'observado':<14} {'':>3}")
-    print("  " + "-" * 60)
+    """Mostra os dias recentes já com resultado conhecido.
+
+    A tabela exibe os **dois** preços (véspera e dia-alvo) de propósito: mostrar
+    só o preço base ao lado da data-alvo faz parecer que aquele é o preço do dia
+    rotulado, quando ele é o do dia anterior.
+    """
+    print("\n  DIAS RECENTES (resultado já conhecido)\n")
+    print(f"  {'dia':<12}{'véspera':>9}{'':4}{'dia':>8}{'var.':>8}   "
+          f"{'classificado':<15}{'observado':<15}")
+    print("  " + "-" * LARGURA)
     for _, r in historico.iterrows():
         marca = "ok" if r["acertou"] else "X"
+        variacao = r["preco_alvo"] / r["preco_base"] - 1
         print(
-            f"  {str(r['data_alvo'].date()):<12} {r['preco_base']:>11.2f}  "
-            f"{ROTULOS[r['classificado']]:<14} {ROTULOS[r['observado']]:<14} {marca:>3}"
+            # seta em ASCII: o console do Windows usa cp1252 e não codifica '→'
+            f"  {str(r['data_alvo'].date()):<12}{r['preco_base']:>9.2f} -> "
+            f"{r['preco_alvo']:>8.2f}{variacao:>+8.1%}   "
+            f"{ROTULOS[r['classificado']]:<15}{ROTULOS[r['observado']]:<15}{marca}"
         )
     acertos = int(historico["acertou"].sum())
-    print(
-        f"\n  acertos nesse trecho: {acertos}/{len(historico)} "
-        f"({acertos / len(historico):.0%}) — amostra pequena demais para "
-        "concluir qualquer coisa."
-    )
+    print("  " + "-" * LARGURA)
+    print(f"  acertos: {acertos}/{len(historico)} "
+          f"({acertos / len(historico):.0%})")
 
 
 def imprimir_dia_seguinte(previsao: dict, nome_modelo: str) -> None:
     """Mostra a classificação do dia que ainda não aconteceu."""
-    print("\n" + "=" * 62)
-    print("  CLASSIFICAÇÃO DO DIA SEGUINTE")
-    print("=" * 62)
-    print(f"  dados até:      {previsao['data_base'].date()} "
-          f"(preço {previsao['preco_base']:.2f} USD)")
-    print(f"  dia classificado: {previsao['data_alvo'].date()}")
-    print(f"  modelo:         {nome_modelo}, ajustado em "
-          f"{previsao['dias_treino']} dias")
-    print(f"\n  -> classificado como: {ROTULOS[previsao['classificado']].upper()}")
-    print("=" * 62)
+    print("\n  " + "=" * LARGURA)
+    print(f"  PREVISÃO — {previsao['data_alvo'].date()} (ainda não aconteceu)")
+    print(f"  partindo de {previsao['preco_base']:.2f} USD "
+          f"em {previsao['data_base'].date()}  ->  "
+          f"{ROTULOS[previsao['classificado']].upper()}")
+    print("  " + "=" * LARGURA)
     print(
-        "  Leitura correta: o modelo atribuiu essa classe a partir de padrões\n"
-        "  do período analisado. NÃO é uma afirmação sobre o que vai acontecer,\n"
-        "  nem recomendação de investimento. O desempenho medido em teste é\n"
-        "  próximo do acaso (ver reports/comparacao_classificadores.md)."
+        f"  {nome_modelo} · {previsao['dias_treino']} dias de treino · "
+        "preços são snapshots de 00:00 UTC"
     )
+    # a ressalva fica em uma linha, mas não sai: é classe atribuída por modelo,
+    # não afirmação sobre o mercado (ver reports/comparacao_classificadores.md)
+    print("  Classe atribuída por modelo estatístico — desempenho próximo do acaso.")
 
 
 # ----------------------------------------------------------------------
@@ -184,12 +200,12 @@ def main() -> None:
     SAIDA.parent.mkdir(parents=True, exist_ok=True)
 
     rotulados, a_prever = carregar_para_previsao()
-    print(
-        f"Histórico rotulado: {len(rotulados)} dias "
-        f"({rotulados['data'].min().date()} a {rotulados['data'].max().date()})"
+    # série completa (com o dia pendente) para resolver o preço de cada dia-alvo
+    precos_por_data = (
+        pd.concat([rotulados, a_prever], ignore_index=True)
+        .set_index("data")["preco"]
     )
-
-    historico = classificar_historico(rotulados)
+    historico = classificar_historico(rotulados, precos_por_data)
     imprimir_historico(historico)
 
     previsao = classificar_dia_seguinte(rotulados, a_prever)
@@ -200,8 +216,8 @@ def main() -> None:
     # `observado` vire float e `acertou` vire object na concatenação
     todas["observado"] = todas["observado"].astype("Int64")
     todas["acertou"] = todas["acertou"].astype("boolean")
-    todas.to_parquet(SAIDA, index=False)
-    print(f"\nTabela salva em: {SAIDA}")
+    todas.to_parquet(SAIDA, index=False)   # consumido pelo dashboard
+    print()
 
 
 if __name__ == "__main__":

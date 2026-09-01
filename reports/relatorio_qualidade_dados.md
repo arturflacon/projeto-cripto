@@ -2,7 +2,7 @@
 
 Trabalho acadêmico (Aprendizagem de Máquina). Nada aqui é recomendação de investimento.
 
-- Gerado em: `2026-09-01T01:14:29+00:00`
+- Gerado em: `2026-09-01T01:24:57+00:00`
 - Entrada: `data\processed\precos.parquet`
 - Saída limpa: `data\processed\precos_limpo.parquet`
 - Período coberto: **2025-09-02 a 2026-09-01**

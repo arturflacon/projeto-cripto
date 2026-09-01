@@ -16,8 +16,6 @@ Cada função ``teste_*`` levanta ``AssertionError`` se a propriedade for violad
 
 from __future__ import annotations
 
-import contextlib
-import io
 import sys
 from pathlib import Path
 
@@ -41,12 +39,6 @@ def _carregar() -> pd.DataFrame:
             "Rode antes: python src/collect.py && python src/preprocess.py"
         )
     return pd.read_parquet(PRECOS)
-
-
-def _montar_tabela(*args, **kwargs) -> pd.DataFrame:
-    """``features.montar_tabela`` sem o print de diagnóstico do pipeline."""
-    with contextlib.redirect_stdout(io.StringIO()):
-        return features.montar_tabela(*args, **kwargs)
 
 
 # ----------------------------------------------------------------------
@@ -102,7 +94,7 @@ def teste_atributos_nao_veem_o_futuro() -> str:
 def teste_rotulo_corresponde_ao_dia_seguinte() -> str:
     """``y=1`` deve equivaler exatamente a ``preco(t+1) > preco(t)``."""
     precos = _carregar()
-    tabela = _montar_tabela(precos, "direcao")
+    tabela = features.montar_tabela(precos, "direcao")
     serie = precos.set_index("data")["preco"]
 
     esperado = [
@@ -117,14 +109,14 @@ def teste_rotulo_corresponde_ao_dia_seguinte() -> str:
 def teste_ultima_linha_descartada() -> str:
     """O último dia não tem "amanhã": deve sair da tabela de treino/avaliação."""
     precos = _carregar()
-    tabela = _montar_tabela(precos, "direcao")
+    tabela = features.montar_tabela(precos, "direcao")
     ultimo_dado = precos["data"].max()
 
     assert tabela["data"].max() < ultimo_dado, (
         "a última linha (sem rótulo possível) não foi descartada"
     )
     # e com manter_sem_rotulo=True ela volta, sem rótulo — é a linha do prever.py
-    com_pendente = _montar_tabela(precos, "direcao", manter_sem_rotulo=True)
+    com_pendente = features.montar_tabela(precos, "direcao", manter_sem_rotulo=True)
     pendentes = com_pendente[com_pendente["y"].isna()]
 
     assert len(pendentes) >= 1, "manter_sem_rotulo=True não preservou o dia pendente"
@@ -189,7 +181,7 @@ def teste_alvo_de_volatilidade() -> str:
 def teste_split_e_cronologico() -> str:
     """Todo dia de treino deve vir antes de todo dia de teste, sem interseção."""
     precos = _carregar()
-    tabela = _montar_tabela(precos, "direcao")
+    tabela = features.montar_tabela(precos, "direcao")
     treino, teste = classification.dividir_temporal(tabela)
 
     assert treino["data"].max() < teste["data"].min(), (
@@ -211,7 +203,7 @@ def teste_escala_ajustada_so_no_treino() -> str:
     carregariam informação do teste — vazamento clássico e fácil de cometer.
     """
     precos = _carregar()
-    tabela = _montar_tabela(precos, "direcao")
+    tabela = features.montar_tabela(precos, "direcao")
     treino, _ = classification.dividir_temporal(tabela)
     colunas = features.colunas_atributos()
 
@@ -237,7 +229,7 @@ def teste_escala_ajustada_so_no_treino() -> str:
 def teste_tabela_sem_nan_nem_infinito() -> str:
     """A tabela de atributos entregue ao modelo não pode ter NaN nem infinitos."""
     precos = _carregar()
-    tabela = _montar_tabela(precos, "direcao")
+    tabela = features.montar_tabela(precos, "direcao")
     colunas = features.colunas_atributos()
 
     nans = int(tabela[colunas].isna().sum().sum())

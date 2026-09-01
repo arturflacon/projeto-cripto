@@ -2,7 +2,7 @@
 
 **Trabalho acadêmico.** Os regimes são grupos estatísticos de dias com atributos parecidos, não categorias oficiais de mercado nem sinais de investimento.
 
-- Gerado em: `2026-09-01T01:11:19+00:00`
+- Gerado em: `2026-09-01T01:22:44+00:00`
 - Entrada: `data\processed\atributos.parquet`
 - Período: **2025-11-30 a 2026-08-30** (274 dias, 13 atributos)
 - Semente fixa: `42`

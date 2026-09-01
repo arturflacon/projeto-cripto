@@ -173,7 +173,6 @@ def montar_tabela(
     tabela = tabela[colunas]
 
     # o aquecimento das janelas (NaN iniciais) sai sempre
-    antes = len(tabela)
     obrigatorias = list(colunas_atributos())
     if not manter_sem_rotulo:
         obrigatorias.append("y")
@@ -182,8 +181,6 @@ def montar_tabela(
     # tipo inteiro; nulável quando as linhas sem rótulo são preservadas
     tabela["y"] = tabela["y"].astype("Int64" if manter_sem_rotulo else "int64")
 
-    print(f"  linhas descartadas (aquecimento{'' if manter_sem_rotulo else ' + última'}): "
-          f"{antes - len(tabela)}")
     return tabela.sort_values(["id", "data"]).reset_index(drop=True)
 
 
@@ -202,6 +199,9 @@ def main() -> None:
     bruto = pd.read_parquet(ENTRADA)
     tabela = montar_tabela(bruto, ALVO)
     tabela.to_parquet(SAIDA, index=False)
+
+    # o aquecimento das janelas e a última linha (sem "amanhã") saem da tabela
+    print(f"  linhas descartadas (aquecimento + última): {len(bruto) - len(tabela)}")
 
     proporcao = tabela["y"].mean()
     print(

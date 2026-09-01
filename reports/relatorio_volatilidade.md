@@ -2,7 +2,7 @@
 
 Extensão do projeto. **Trabalho acadêmico**: estimativas condicionadas ao período analisado, não recomendação de investimento.
 
-- Gerado em: `2026-09-01T01:11:30+00:00`
+- Gerado em: `2026-09-01T01:22:51+00:00`
 - Entrada: `data\processed\precos_limpo.parquet`
 - Alvo: desvio-padrão dos retornos dos **7 dias seguintes**
 - Horizonte e modelo selecionados **só com o treino**

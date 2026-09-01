@@ -2,7 +2,7 @@
 
 Encontros 10-11. **Trabalho acadêmico**: os resultados são estimativas condicionadas ao período analisado e não constituem recomendação de investimento.
 
-- Gerado em: `2026-09-01T01:11:23+00:00`
+- Gerado em: `2026-09-01T01:22:47+00:00`
 - Entrada: `data\processed\atributos.parquet`
 - Alvo: `direcao`
 - Semente fixa: `42`
