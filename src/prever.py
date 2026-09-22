@@ -539,24 +539,34 @@ def escrever_relatorio(
         )
     )
 
-    p.append("### Como o regressor foi escolhido\n")
+    # --- 3. seleção
+    p.append("## 3. Como os modelos foram escolhidos\n")
     p.append(
         f"`TimeSeriesSplit` com {N_SPLITS_SELECAO} partições sobre os "
         f"{n_treino_selecao} dias **anteriores** à janela exibida — nenhum dia "
-        "previsto acima participou da escolha. Critério: menor RMSE médio do "
-        "retorno diário.\n"
+        "previsto acima participou da escolha.\n"
     )
+    p.append("**Classificador** (critério: maior acurácia balanceada média):\n")
+    p.append(
+        tabela_md(
+            ["modelo", "acurácia balanceada média", "desvio"],
+            [[r["modelo"], f"{r['acuracia_balanceada_media']:.3f}",
+              f"{r['acuracia_balanceada_desvio']:.3f}"]
+             for _, r in selecao_clf.iterrows()],
+        )
+    )
+    p.append("\n**Regressor** (critério: menor RMSE médio do retorno diário):\n")
     p.append(
         tabela_md(
             ["modelo", "RMSE médio do retorno", "desvio"],
             [[r["modelo"], f"{r['rmse_media']:.4f}", f"{r['rmse_desvio']:.4f}"]
-             for _, r in selecao.iterrows()],
+             for _, r in selecao_reg.iterrows()],
         )
     )
     p.append(
-        "\n> Se o baseline *retorno zero* aparece no topo, nenhum regressor "
-        "aprendeu algo além de \"amanhã ≈ hoje\" — o escolhido é apenas o menos "
-        "ruim entre os modelos.\n"
+        "\n> Acurácia balanceada de 0,5 é o acaso. Se o baseline *retorno zero* "
+        "aparece no topo da tabela de regressores, nenhum deles aprendeu algo além "
+        "de \"amanhã ≈ hoje\" — o escolhido é apenas o menos ruim entre os modelos.\n"
     )
 
     p.append("## Ressalvas\n")
@@ -588,22 +598,30 @@ def main() -> None:
             "posterior ao último rótulo. Rode `python src/collect.py` para atualizar."
         )
 
-    # --- direção
-    historico = classificar_historico(rotulados, precos_por_data)
-    imprimir_historico(historico)
-    previsao = classificar_dia_seguinte(rotulados, a_prever)
-
-    # --- preço: o regressor é escolhido antes da janela, só com dias anteriores a ela
+    # --- escolha dos modelos: só com os dias anteriores à janela exibida
     inicio_janela = max(len(rotulados) - DIAS_HISTORICO, 1)
-    nome_regressor, selecao = selecionar_regressor(rotulados.iloc[:inicio_janela])
-    print(f"\n  regressor escolhido (walk-forward em {inicio_janela} dias anteriores "
-          f"à janela): {nome_regressor}")
-    historico_reg = estimar_historico(rotulados, precos_por_data, nome_regressor)
+    anteriores = rotulados.iloc[:inicio_janela]
+    nome_clf, selecao_clf = selecionar_classificador(anteriores)
+    nome_reg, selecao_reg = selecionar_regressor(anteriores)
+    if CLASSIFICADOR:
+        nome_clf = CLASSIFICADOR
+    if REGRESSOR:
+        nome_reg = REGRESSOR
+    print(f"  modelos escolhidos por walk-forward em {inicio_janela} dias anteriores "
+          f"à janela: {nome_clf} (direção), {nome_reg} (preço)")
+
+    # --- direção
+    historico = classificar_historico(rotulados, precos_por_data, nome_clf)
+    imprimir_historico(historico)
+    previsao = classificar_dia_seguinte(rotulados, a_prever, nome_clf)
+
+    # --- preço
+    historico_reg = estimar_historico(rotulados, precos_por_data, nome_reg)
     resumo_reg = resumir_regressao(historico_reg)
     imprimir_historico_regressao(historico_reg, resumo_reg)
-    previsao_reg = estimar_dia_seguinte(rotulados, a_prever, nome_regressor)
+    previsao_reg = estimar_dia_seguinte(rotulados, a_prever, nome_reg)
 
-    imprimir_dia_seguinte(previsao, previsao_reg, MODELO, nome_regressor)
+    imprimir_dia_seguinte(previsao, previsao_reg, nome_clf, nome_reg)
 
     # --- saídas
     todas = pd.concat([historico, pd.DataFrame([previsao])], ignore_index=True)
@@ -624,8 +642,10 @@ def main() -> None:
         historico_reg=historico_reg,
         previsao_reg=previsao_reg,
         resumo_reg=resumo_reg,
-        selecao=selecao,
-        nome_regressor=nome_regressor,
+        nome_classificador=nome_clf,
+        nome_regressor=nome_reg,
+        selecao_clf=selecao_clf,
+        selecao_reg=selecao_reg,
         n_treino_selecao=inicio_janela,
     )
     print(f"\n  Relatório: {SAIDA_RELATORIO}\n")

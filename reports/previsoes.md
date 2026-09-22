@@ -2,16 +2,16 @@
 
 **Trabalho acadêmico.** As previsões abaixo são estimativas de modelos estatísticos a partir de padrões passados, condicionadas ao período analisado. Não são previsão confiável do mercado nem recomendação de investimento.
 
-- Gerado em: `2026-09-22T01:14:58+00:00`
+- Gerado em: `2026-09-22T01:46:02+00:00`
 - Entrada: `data\processed\precos_limpo.parquet`
 - Janela exibida: **2026-09-08 a 2026-09-22** (15 dias com resultado conhecido) + o dia seguinte
-- Classificador: `Perceptron` · Regressor: `KNN`
+- Classificador: `SVM (RBF)` · Regressor: `KNN` (escolhidos na seção 3)
 
 ## Protocolo
 
 Walk-forward expansivo: para cada dia `d` da janela, o modelo é ajustado **apenas com os dias anteriores a `d`** e então prevê `d`. Os atributos de `d` usam só dados até `d`; o dia seguinte (`d+1`) entra apenas como gabarito, depois da previsão — nunca como atributo. A linha do dia seguinte real é só mais um passo do mesmo laço, então o histórico é comparável a ela.
 
-## 1. Direção do dia seguinte — Perceptron
+## 1. Direção do dia seguinte — SVM (RBF)
 
 | dia | véspera (USD) | dia (USD) | variação | classificado | observado |  |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -20,7 +20,7 @@ Walk-forward expansivo: para cada dia `d` da janela, o modelo é ajustado **apen
 | 2026-09-10 | 103.36 | 101.57 | -1.7% | baixa/estável | baixa/estável | ✓ |
 | 2026-09-11 | 101.57 | 98.63 | -2.9% | baixa/estável | baixa/estável | ✓ |
 | 2026-09-12 | 98.63 | 102.39 | +3.8% | baixa/estável | alta | ✗ |
-| 2026-09-13 | 102.39 | 101.75 | -0.6% | alta | baixa/estável | ✗ |
+| 2026-09-13 | 102.39 | 101.75 | -0.6% | baixa/estável | baixa/estável | ✓ |
 | 2026-09-14 | 101.75 | 99.33 | -2.4% | baixa/estável | baixa/estável | ✓ |
 | 2026-09-15 | 99.33 | 102.51 | +3.2% | baixa/estável | alta | ✗ |
 | 2026-09-16 | 102.51 | 96.87 | -5.5% | baixa/estável | baixa/estável | ✓ |
@@ -32,7 +32,7 @@ Walk-forward expansivo: para cada dia `d` da janela, o modelo é ajustado **apen
 | 2026-09-22 | 111.15 | 118.87 | +6.9% | alta | alta | ✓ |
 | **2026-09-23** | 118.87 | — | — | **baixa/estável** | (pendente) |  |
 
-> Acertos na janela: **6/15** (40%). Com 15 dias, uma moeda honesta fica entre 5 e 10 acertos na maior parte das vezes — a janela é curta demais para distinguir habilidade de acaso.
+> Acertos na janela: **7/15** (47%). Com 15 dias, uma moeda honesta fica entre 5 e 10 acertos na maior parte das vezes — a janela é curta demais para distinguir habilidade de acaso.
 
 ## 2. Preço do dia seguinte — KNN
 
@@ -66,9 +66,21 @@ O regressor estima o **retorno** de `t -> t+1`; o preço estimado é `preço de 
 
 > Direção acertada pelo sinal do retorno estimado: **9/15**. O regressor errou **menos** que a persistência nesta janela — diferença pequena, sobre poucos dias, que pode não se repetir.
 
-### Como o regressor foi escolhido
+## 3. Como os modelos foram escolhidos
 
-`TimeSeriesSplit` com 5 partições sobre os 259 dias **anteriores** à janela exibida — nenhum dia previsto acima participou da escolha. Critério: menor RMSE médio do retorno diário.
+`TimeSeriesSplit` com 5 partições sobre os 259 dias **anteriores** à janela exibida — nenhum dia previsto acima participou da escolha.
+
+**Classificador** (critério: maior acurácia balanceada média):
+
+| modelo | acurácia balanceada média | desvio |
+| --- | --- | --- |
+| SVM (RBF) | 0.506 | 0.052 |
+| Perceptron | 0.490 | 0.053 |
+| Árvore de decisão | 0.479 | 0.046 |
+| KNN | 0.478 | 0.065 |
+| Naive Bayes | 0.445 | 0.040 |
+
+**Regressor** (critério: menor RMSE médio do retorno diário):
 
 | modelo | RMSE médio do retorno | desvio |
 | --- | --- | --- |
@@ -78,7 +90,7 @@ O regressor estima o **retorno** de `t -> t+1`; o preço estimado é `preço de 
 | Árvore de decisão | 0.0455 | 0.0142 |
 | Ridge (linear) | 0.0467 | 0.0217 |
 
-> Se o baseline *retorno zero* aparece no topo, nenhum regressor aprendeu algo além de "amanhã ≈ hoje" — o escolhido é apenas o menos ruim entre os modelos.
+> Acurácia balanceada de 0,5 é o acaso. Se o baseline *retorno zero* aparece no topo da tabela de regressores, nenhum deles aprendeu algo além de "amanhã ≈ hoje" — o escolhido é apenas o menos ruim entre os modelos.
 
 ## Ressalvas
 
