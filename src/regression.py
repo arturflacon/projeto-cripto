@@ -14,8 +14,9 @@ modelo, usando apenas o treino — ele é uma decisão de modelagem, não um dad
 problema.
 
 Entrada:  ``data/processed/precos_limpo.parquet``
-Saída:
-  reports/relatorio_volatilidade.md
+Sem arquivo de saída: seleção, baselines e avaliação vão para o terminal. Os
+regressores definidos aqui (``construir_modelos``) são reutilizados por
+``prever.py`` para estimar o preço do dia seguinte.
 
 Mesmo rigor dos Encontros 10-11: atributos só com passado, split cronológico,
 padronização dentro do Pipeline, baselines medidos antes e seleção que nunca
@@ -26,7 +27,6 @@ Trabalho acadêmico: nada aqui é recomendação de investimento.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -42,14 +42,12 @@ from sklearn.tree import DecisionTreeRegressor
 
 import features
 from classification import dividir_temporal
-from preprocess import _tabela_md as tabela_md
 
 # ----------------------------------------------------------------------
 # Configuração (parâmetros registrados para reprodutibilidade)
 # ----------------------------------------------------------------------
 RAIZ = Path(__file__).resolve().parents[1]          # .../projeto-cripto
 ENTRADA = RAIZ / "data" / "processed" / "precos_limpo.parquet"
-SAIDA_RELATORIO = RAIZ / "reports" / "relatorio_volatilidade.md"
 
 SEMENTE = 42
 # O horizonte do alvo é uma escolha de modelagem, não um dado do problema: uma
@@ -256,8 +254,6 @@ def r2_no_teste_por_horizonte(horizontes=HORIZONTES) -> pd.DataFrame:
 # Orquestração
 # ----------------------------------------------------------------------
 def main() -> None:
-    SAIDA_RELATORIO.parent.mkdir(parents=True, exist_ok=True)
-
     print("1. Selecionando horizonte e modelo por walk-forward no treino")
     print(f"   ({len(HORIZONTES)} horizontes x {len(construir_modelos())} modelos, "
           f"{N_SPLITS} partições)...")
@@ -300,28 +296,12 @@ def main() -> None:
     for nome, valor in ganhos.items():
         print(f"      {nome:52s} {valor:+.1%}")
 
-    print("\n5. Armadilha (só para o relatório — não decide nada):")
+    print("\n5. Armadilha (demonstração — não decide nada):")
     armadilha = r2_no_teste_por_horizonte()
     for _, r in armadilha.iterrows():
         print(f"   h={int(r['horizonte']):2d}: melhor no teste seria "
               f"{r['melhor_no_teste']:20s} R²={r['r2_teste']:+.3f}")
-
-    escrever_relatorio(
-        SAIDA_RELATORIO,
-        horizonte=horizonte,
-        melhor=melhor,
-        tabela=tabela,
-        treino=treino,
-        teste=teste,
-        baselines=baselines,
-        selecao=selecao,
-        resultados=resultados,
-        ganhos=ganhos,
-        correlacao=correlacao,
-        armadilha=armadilha,
-    )
-
-    print(f"\nRelatório: {SAIDA_RELATORIO}")
+    print("   escolher o horizonte por esta tabela seria selecionar olhando o teste.")
 
 
 if __name__ == "__main__":
