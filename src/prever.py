@@ -16,8 +16,9 @@ Protocolo (walk-forward expansivo — a mesma regra para todos os dias):
   O dia seguinte (que ainda não aconteceu) é só mais um passo desse mesmo laço —
   por isso o histórico exibido é comparável à previsão de amanhã.
 
-O regressor é escolhido por ``TimeSeriesSplit`` **antes** da janela exibida, com
-dados estritamente anteriores a ela — a escolha não enxerga os dias previstos.
+Classificador e regressor são escolhidos por ``TimeSeriesSplit`` **antes** da
+janela exibida, com dados estritamente anteriores a ela — a escolha não enxerga
+os dias previstos.
 
 Saídas:
   data/processed/previsoes.parquet            -> direção (consumido pelo dashboard)
@@ -36,6 +37,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from sklearn.metrics import balanced_accuracy_score
 from sklearn.model_selection import TimeSeriesSplit
 
 import classification
@@ -52,15 +54,16 @@ SAIDA = RAIZ / "data" / "processed" / "previsoes.parquet"
 SAIDA_REGRESSAO = RAIZ / "data" / "processed" / "previsoes_regressao.parquet"
 SAIDA_RELATORIO = RAIZ / "reports" / "previsoes.md"
 
-# Classificador usado. O padrão é o vencedor do walk-forward feito em
-# `classification.py` (seleção que não olhou o teste retido). Qualquer chave de
-# `classification.construir_modelos()` serve.
-MODELO = "Perceptron"
+# Modelos fixados à mão (chaves de `classification.construir_modelos()` e
+# `regression.construir_modelos()`). ``None`` = escolher por walk-forward nos
+# dias anteriores à janela exibida, que é o padrão.
+CLASSIFICADOR = None
+REGRESSOR = None
 
 # Quantos dias recentes re-prever para exibir o comportamento dos modelos.
 DIAS_HISTORICO = 15
 
-# Partições do walk-forward usado para escolher o regressor (só com dados
+# Partições do walk-forward usado para escolher os modelos (só com dados
 # anteriores à janela exibida).
 N_SPLITS_SELECAO = 5
 
@@ -122,11 +125,42 @@ def _ajustar_e_classificar(
     return int(modelo.predict(alvo[colunas])[0])
 
 
+def selecionar_classificador(
+    treino: pd.DataFrame, n_splits: int = N_SPLITS_SELECAO
+) -> tuple[str, pd.DataFrame]:
+    """Escolhe o classificador por ``TimeSeriesSplit`` — só com o trecho recebido.
+
+    Chamada com os dias **anteriores** à janela exibida. Critério: maior acurácia
+    balanceada média entre partições (o mesmo de ``classification.py``).
+    """
+    colunas = features.colunas_atributos()
+    X = treino[colunas].to_numpy()
+    y = treino["y"].astype(int).to_numpy()
+    particoes = list(TimeSeriesSplit(n_splits=n_splits).split(X))
+
+    linhas = []
+    for nome in classification.construir_modelos():
+        acuracias = []
+        for idx_treino, idx_val in particoes:
+            modelo = classification.construir_modelos()[nome]   # Pipeline novo por partição
+            modelo.fit(X[idx_treino], y[idx_treino])
+            acuracias.append(balanced_accuracy_score(y[idx_val], modelo.predict(X[idx_val])))
+        linhas.append({"modelo": nome, "acuracia_balanceada_media": float(np.mean(acuracias)),
+                       "acuracia_balanceada_desvio": float(np.std(acuracias))})
+
+    selecao = (
+        pd.DataFrame(linhas)
+        .sort_values("acuracia_balanceada_media", ascending=False)
+        .reset_index(drop=True)
+    )
+    return str(selecao.iloc[0]["modelo"]), selecao
+
+
 def classificar_historico(
     rotulados: pd.DataFrame,
     precos_por_data: pd.Series,
+    nome_modelo: str,
     n_dias: int = DIAS_HISTORICO,
-    nome_modelo: str = MODELO,
 ) -> pd.DataFrame:
     """Reclassifica os ``n_dias`` finais, cada um com um modelo ajustado só no passado.
 
@@ -159,7 +193,7 @@ def classificar_historico(
 
 
 def classificar_dia_seguinte(
-    rotulados: pd.DataFrame, a_prever: pd.DataFrame, nome_modelo: str = MODELO
+    rotulados: pd.DataFrame, a_prever: pd.DataFrame, nome_modelo: str
 ) -> dict:
     """Classifica o dia seguinte usando **todo** o histórico rotulado disponível."""
     dia = a_prever.iloc[[-1]]
@@ -382,8 +416,10 @@ def escrever_relatorio(
     historico_reg: pd.DataFrame,
     previsao_reg: dict,
     resumo_reg: dict,
-    selecao: pd.DataFrame,
+    nome_classificador: str,
     nome_regressor: str,
+    selecao_clf: pd.DataFrame,
+    selecao_reg: pd.DataFrame,
     n_treino_selecao: int,
 ) -> None:
     """Escreve o relatório de previsões em Markdown."""
@@ -404,7 +440,8 @@ def escrever_relatorio(
         f"{historico['data_alvo'].max().date()}** ({len(historico)} dias com "
         "resultado conhecido) + o dia seguinte"
     )
-    p.append(f"- Classificador: `{MODELO}` · Regressor: `{nome_regressor}`")
+    p.append(f"- Classificador: `{nome_classificador}` · Regressor: `{nome_regressor}` "
+             "(escolhidos na seção 3)")
     p.append("")
 
     p.append("## Protocolo\n")
@@ -418,7 +455,7 @@ def escrever_relatorio(
     )
 
     # --- 1. direção
-    p.append(f"## 1. Direção do dia seguinte — {MODELO}\n")
+    p.append(f"## 1. Direção do dia seguinte — {nome_classificador}\n")
     p.append(
         tabela_md(
             ["dia", "véspera (USD)", "dia (USD)", "variação", "classificado",
