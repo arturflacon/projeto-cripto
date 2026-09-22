@@ -15,9 +15,8 @@ Protocolo (nesta ordem, para não contaminar a avaliação):
 Padronização (``StandardScaler``) vive dentro de um ``Pipeline``, então é ajustada
 só com o treino de cada partição — nunca com o teste.
 
-Saídas:
-  reports/comparacao_classificadores.md
-  reports/matriz_confusao.png
+Sem arquivo de saída: baselines, comparação, matriz de confusão e análise de
+erros vão para o terminal. O classificador vencedor é o usado por ``prever.py``.
 
 Trabalho acadêmico: nada aqui é recomendação de investimento. As previsões são
 estimativas condicionadas ao período analisado, não afirmações sobre o futuro.
@@ -25,11 +24,8 @@ estimativas condicionadas ao período analisado, não afirmações sobre o futur
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from pathlib import Path
 
-import matplotlib
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from sklearn.dummy import DummyClassifier
@@ -50,9 +46,6 @@ from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
 
 import features
-from preprocess import _tabela_md as tabela_md
-
-matplotlib.use("Agg")  # backend sem janela: salva a figura direto em arquivo
 
 # ----------------------------------------------------------------------
 # Configuração (parâmetros registrados para reprodutibilidade)
@@ -60,8 +53,6 @@ matplotlib.use("Agg")  # backend sem janela: salva a figura direto em arquivo
 RAIZ = Path(__file__).resolve().parents[1]          # .../projeto-cripto
 ENTRADA = RAIZ / "data" / "processed" / "atributos.parquet"
 ENTRADA_PRECOS = RAIZ / "data" / "processed" / "precos_limpo.parquet"
-SAIDA_RELATORIO = RAIZ / "reports" / "comparacao_classificadores.md"
-SAIDA_FIGURA = RAIZ / "reports" / "matriz_confusao.png"
 
 SEMENTE = 42
 FRACAO_TREINO = 0.70    # os 30% finais (cronológicos) ficam para teste
@@ -279,297 +270,15 @@ def analisar_erros(
     }
 
 
-def salvar_matriz_confusao(
-    y_true: np.ndarray, y_pred: np.ndarray, nome: str, destino: Path
-) -> np.ndarray:
-    """Salva a matriz de confusão do melhor modelo como figura."""
-    matriz = confusion_matrix(y_true, y_pred, labels=[0, 1])
-
-    fig, eixo = plt.subplots(figsize=(4.2, 3.8))
-    eixo.imshow(matriz, cmap="Blues")
-    rotulos = ["baixa/estável (0)", "alta (1)"]
-    eixo.set_xticks([0, 1], rotulos, fontsize=8)
-    eixo.set_yticks([0, 1], rotulos, fontsize=8, rotation=90, va="center")
-    eixo.set_xlabel("classificado pelo modelo")
-    eixo.set_ylabel("observado")
-    eixo.set_title(f"Matriz de confusão — {nome}", fontsize=10)
-    # limiar no meio da faixa de cores (o colormap normaliza entre min e max),
-    # para o texto não sair branco sobre célula clara
-    limiar = (int(matriz.min()) + int(matriz.max())) / 2
-    for i in range(2):
-        for j in range(2):
-            eixo.text(
-                j, i, str(matriz[i, j]), ha="center", va="center",
-                color="white" if matriz[i, j] > limiar else "black",
-                fontsize=14,
-            )
-    fig.tight_layout()
-    fig.savefig(destino, dpi=150)
-    plt.close(fig)
-    return matriz
-
-
-# ----------------------------------------------------------------------
-# 7. Relatório
-# ----------------------------------------------------------------------
-def _fmt(df: pd.DataFrame, casas: int = 3) -> list[list]:
-    """Formata um DataFrame para as linhas da tabela Markdown.
-
-    Formata coluna a coluna (e não célula a célula) porque ``to_numpy`` em um
-    DataFrame misto promove tudo a float — o que imprimiria contagens como
-    ``40.000``.
-    """
-    formatado = df.copy()
-    for coluna in formatado.columns:
-        if pd.api.types.is_float_dtype(formatado[coluna]):
-            formatado[coluna] = formatado[coluna].map(lambda v: f"{v:.{casas}f}")
-        else:
-            formatado[coluna] = formatado[coluna].astype(str)
-    return formatado.to_numpy().tolist()
-
-
-def escrever_relatorio(
-    caminho: Path,
-    *,
-    tabela: pd.DataFrame,
-    treino: pd.DataFrame,
-    teste: pd.DataFrame,
-    baselines: dict[str, dict[str, float]],
-    walk_forward: pd.DataFrame,
-    resultados_teste: pd.DataFrame,
-    melhor: str,
-    matriz: np.ndarray,
-    erros: dict,
-) -> None:
-    """Escreve a comparação completa em Markdown."""
-    agora = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    p: list[str] = []
-
-    p.append("# Classificação da direção do dia seguinte — Solana\n")
-    p.append(
-        "Encontros 10-11. **Trabalho acadêmico**: os resultados são estimativas "
-        "condicionadas ao período analisado e não constituem recomendação de "
-        "investimento.\n"
-    )
-    p.append(f"- Gerado em: `{agora}`")
-    p.append(f"- Entrada: `{ENTRADA.relative_to(RAIZ)}`")
-    p.append(f"- Alvo: `{features.ALVO}`")
-    p.append(f"- Semente fixa: `{SEMENTE}`")
-    p.append("")
-
-    p.append("## Desenho experimental\n")
-    p.append(
-        _linha_tabela_split(tabela, treino, teste)
-    )
-    p.append("")
-    p.append(
-        "> A divisão é **cronológica**: o teste é o trecho final da série. "
-        "Nenhum embaralhamento é usado — embaralhar aqui seria vazamento. "
-        "A padronização (`StandardScaler`) está dentro do `Pipeline`, então "
-        "média e desvio saem só do treino de cada partição.\n"
-    )
-
-    p.append("## 1. Baselines (medidos antes dos modelos)\n")
-    p.append(
-        tabela_md(
-            ["baseline", "acurácia balanceada", "F1", "precisão", "recall", "acurácia"],
-            [
-                [nome, f"{m['acuracia_balanceada']:.3f}", f"{m['f1']:.3f}",
-                 f"{m['precisao']:.3f}", f"{m['recall']:.3f}", f"{m['acuracia']:.3f}"]
-                for nome, m in baselines.items()
-            ],
-        )
-    )
-    p.append(
-        "\n> Referência obrigatória: um classificador só agrega valor se superar "
-        "estes números. Note que *sempre alta* tem acurácia balanceada 0,5 por "
-        "construção (acerta 100% de uma classe e 0% da outra) — é justamente por "
-        "isso que a acurácia balanceada é a métrica principal aqui.\n"
-    )
-
-    p.append(f"## 2. Comparação walk-forward (`TimeSeriesSplit`, {N_SPLITS} partições)\n")
-    p.append(
-        "Rodado **apenas dentro do treino**, para que a escolha do melhor modelo "
-        "não enxergue o teste. Média ± desvio entre partições:\n"
-    )
-    p.append(
-        tabela_md(
-            ["modelo", "acurácia balanceada (média ± dp)", "F1 (média ± dp)"],
-            [
-                [
-                    r["modelo"],
-                    f"{r['acuracia_balanceada_media']:.3f} ± "
-                    f"{r['acuracia_balanceada_desvio']:.3f}",
-                    f"{r['f1_media']:.3f} ± {r['f1_desvio']:.3f}",
-                ]
-                for _, r in walk_forward.iterrows()
-            ],
-        )
-    )
-    p.append(
-        f"\n> Modelo selecionado: **{melhor}** (maior acurácia balanceada média "
-        "no walk-forward). O desvio entre partições é grande em relação à "
-        "diferença entre modelos — sinal de que o ranking é instável.\n"
-    )
-
-    p.append("## 3. Avaliação final no teste retido\n")
-    p.append(
-        tabela_md(
-            ["modelo", "acurácia balanceada", "F1", "precisão", "recall", "acurácia"],
-            _fmt(resultados_teste.sort_values("acuracia_balanceada", ascending=False)),
-        )
-    )
-    p.append(
-        "\n> Cada modelo foi reajustado no treino inteiro e avaliado **uma única vez** "
-        "no teste.\n"
-    )
-
-    p.append(f"## 4. Matriz de confusão — {melhor}\n")
-    p.append(
-        tabela_md(
-            ["", "classificado 0 (baixa/estável)", "classificado 1 (alta)"],
-            [
-                ["**observado 0**", int(matriz[0, 0]), int(matriz[0, 1])],
-                ["**observado 1**", int(matriz[1, 0]), int(matriz[1, 1])],
-            ],
-        )
-    )
-    p.append(f"\n![Matriz de confusão]({SAIDA_FIGURA.name})\n")
-
-    p.append("## 5. Análise de erros\n")
-    p.append("**Distribuição das previsões**\n")
-    p.append(tabela_md(["métrica", "valor"], erros["distribuicao"].to_numpy().tolist()))
-    p.append("\n**Taxa de acerto por classe real**\n")
-    p.append(
-        tabela_md(["classe real", "dias", "taxa de acerto"],
-                  _fmt(erros["por_classe"]))
-    )
-    p.append("\n**Taxa de acerto por regime de volatilidade (tercis de `vol_30d`)**\n")
-    p.append(
-        tabela_md(["faixa de volatilidade", "dias", "taxa de acerto"],
-                  _fmt(erros["por_volatilidade"]))
-    )
-    p.append("\n**Taxa de acerto por tamanho do movimento realizado (|retorno t+1|)**\n")
-    p.append(
-        tabela_md(["faixa do movimento", "dias", "taxa de acerto"],
-                  _fmt(erros["por_movimento"]))
-    )
-    p.append("")
-
-    p.append("## 6. Discussão\n")
-    p.append(_discussao(baselines, resultados_teste, melhor, erros))
-
-    caminho.write_text("\n".join(p), encoding="utf-8")
-
-
-def _linha_tabela_split(
-    tabela: pd.DataFrame, treino: pd.DataFrame, teste: pd.DataFrame
-) -> str:
-    """Tabela com o desenho do split temporal."""
-    return tabela_md(
-        ["conjunto", "dias", "período", "proporção de alta"],
-        [
-            ["treino", len(treino),
-             f"{treino['data'].min().date()} a {treino['data'].max().date()}",
-             f"{treino['y'].mean():.1%}"],
-            ["teste", len(teste),
-             f"{teste['data'].min().date()} a {teste['data'].max().date()}",
-             f"{teste['y'].mean():.1%}"],
-            ["total", len(tabela),
-             f"{tabela['data'].min().date()} a {tabela['data'].max().date()}",
-             f"{tabela['y'].mean():.1%}"],
-        ],
-    )
-
-
-def _discussao(
-    baselines: dict[str, dict[str, float]],
-    resultados_teste: pd.DataFrame,
-    melhor: str,
-    erros: dict,
-) -> str:
-    """Leitura honesta dos resultados, com os números do experimento."""
-    melhor_baseline = max(b["acuracia_balanceada"] for b in baselines.values())
-    linha = resultados_teste.set_index("modelo").loc[melhor]
-    diferenca = linha["acuracia_balanceada"] - melhor_baseline
-    superou = diferenca > 0
-
-    veredito = (
-        f"superou o melhor baseline em {diferenca:+.3f}"
-        if superou
-        else f"**não** superou o melhor baseline ({diferenca:+.3f})"
-    )
-    analise = erros["tabela"]
-    n_teste = len(analise)
-    frac_alta_prevista = analise["previsto"].mean()
-    frac_alta_real = analise["y"].mean()
-
-    # Sob a hipótese nula "o modelo é uma moeda honesta", a acurácia tem erro
-    # padrão sqrt(0.25/n). Serve para dimensionar se a vantagem é ruído.
-    erro_padrao = float(np.sqrt(0.25 / n_teste))
-    desvios = (linha["acuracia"] - 0.5) / erro_padrao
-
-    acerto_classe = erros["por_classe"].set_index("classe_real")["taxa_acerto"]
-    vol = erros["por_volatilidade"].set_index("faixa")["taxa_acerto"]
-    mov = erros["por_movimento"].set_index("faixa")["taxa_acerto"]
-
-    return (
-        f"O modelo selecionado (**{melhor}**) obteve acurácia balanceada "
-        f"**{linha['acuracia_balanceada']:.3f}** no teste retido, contra "
-        f"**{melhor_baseline:.3f}** do melhor baseline — ou seja, {veredito}.\n\n"
-        f"**Viés de classe.** O modelo classificou como alta {frac_alta_prevista:.1%} "
-        f"dos {n_teste} dias de teste, enquanto apenas {frac_alta_real:.1%} foram de "
-        f"fato de alta: ele é otimista por construção do ajuste. Isso aparece na "
-        f"assimetria de acerto — {acerto_classe.get(1, float('nan')):.1%} nos dias "
-        f"que subiram contra {acerto_classe.get(0, float('nan')):.1%} nos que não "
-        "subiram. Num período de tendência de queda como o analisado, esse viés é "
-        "frágil: ele depende de a proporção de altas se manter.\n\n"
-        f"**Regime de volatilidade.** O acerto cai de {vol.get('baixo', float('nan')):.1%} "
-        f"(volatilidade baixa) e {vol.get('médio', float('nan')):.1%} (média) para "
-        f"{vol.get('alto', float('nan')):.1%} nos dias de volatilidade alta — "
-        "coerente com a intuição de que regimes turbulentos são menos previsíveis.\n\n"
-        f"**Tamanho do movimento.** O acerto é {mov.get('baixo', float('nan')):.1%} nos "
-        f"movimentos pequenos, {mov.get('médio', float('nan')):.1%} nos médios e "
-        f"{mov.get('alto', float('nan')):.1%} nos grandes. Acertar movimentos pequenos "
-        "tem pouco significado prático (a diferença entre subir e cair é quase "
-        "arbitrária ali), então concentrar acerto nos movimentos grandes é o padrão "
-        "mais interessante — embora com poucas dezenas de dias possa ser coincidência.\n\n"
-        f"**Significância.** Com {n_teste} dias de teste, o erro padrão da acurácia sob "
-        f"a hipótese de cara-ou-coroa é {erro_padrao:.3f}. A acurácia observada "
-        f"({linha['acuracia']:.3f}) está a {desvios:.1f} desvios de 0,5 — "
-        + (
-            "ou seja, **dentro do que o acaso produz**; não é evidência de "
-            "capacidade preditiva real.\n\n"
-            if abs(desvios) < 2
-            else "acima do limiar usual de 2 desvios, mas ainda sobre uma amostra "
-            "pequena e um único período.\n\n"
-        )
-        + "Vale o mesmo para a comparação entre modelos: diferenças de poucos pontos "
-        "estão dentro do ruído, e é por isso que o walk-forward reporta o desvio "
-        "entre partições, e não só a média.\n\n"
-        "**Enquadramento honesto.** Prever a direção **diária** de um criptoativo, "
-        "com split temporal e sem vazamento, fica próximo de cara-ou-coroa. Isso é "
-        "esperado: se um padrão simples e estável existisse nesses atributos, ele "
-        "seria arbitrado rapidamente. O resultado modesto **não indica falha de "
-        "execução** — indica que o sinal disponível nesse horizonte, com esses "
-        "atributos e esse tamanho de amostra, é fraco. O que sustenta o trabalho é "
-        "o rigor do protocolo: atributos só com passado (verificado por "
-        "recomputação em série truncada), rótulo isolado no futuro, divisão "
-        "cronológica, padronização dentro do `Pipeline`, baseline medido antes e "
-        "métricas balanceadas.\n\n"
-        "**Extensões possíveis** (mais promissoras que direção pura): alvo "
-        "`acima_mediana` em `features.py` (desempenho relativo, mais estável) ou "
-        "regressão da **volatilidade futura**, que é bem mais previsível que o "
-        "sinal do retorno.\n"
-    )
+def matriz_confusao(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
+    """Matriz de confusão 2x2 do melhor modelo (linhas = observado, colunas = previsto)."""
+    return confusion_matrix(y_true, y_pred, labels=[0, 1])
 
 
 # ----------------------------------------------------------------------
 # Orquestração
 # ----------------------------------------------------------------------
 def main() -> None:
-    SAIDA_RELATORIO.parent.mkdir(parents=True, exist_ok=True)
-
     tabela = carregar_tabela()
     treino, teste = dividir_temporal(tabela)
     print(
@@ -605,26 +314,20 @@ def main() -> None:
             f"f1={r['f1']:.3f}"
         )
 
-    matriz = salvar_matriz_confusao(
-        teste["y"].to_numpy(), previsoes[melhor], melhor, SAIDA_FIGURA
-    )
+    print(f"\n4. Matriz de confusão — {melhor} (linhas = observado, colunas = previsto):")
+    matriz = matriz_confusao(teste["y"].to_numpy(), previsoes[melhor])
+    print(f"   obs. 0 -> [{matriz[0, 0]:3d} {matriz[0, 1]:3d}]")
+    print(f"   obs. 1 -> [{matriz[1, 0]:3d} {matriz[1, 1]:3d}]")
+
+    print("\n5. Análise de erros (taxa de acerto):")
     erros = analisar_erros(teste, previsoes[melhor], melhor)
-
-    escrever_relatorio(
-        SAIDA_RELATORIO,
-        tabela=tabela,
-        treino=treino,
-        teste=teste,
-        baselines=baselines,
-        walk_forward=walk_forward,
-        resultados_teste=resultados_teste,
-        melhor=melhor,
-        matriz=matriz,
-        erros=erros,
-    )
-
-    print(f"\nRelatório: {SAIDA_RELATORIO}")
-    print(f"Figura:    {SAIDA_FIGURA}")
+    for _, r in erros["por_classe"].iterrows():
+        print(f"   classe real {int(r['classe_real'])}: {r['taxa_acerto']:.1%} "
+              f"({int(r['dias'])} dias)")
+    for chave, rotulo in (("por_volatilidade", "vol_30d"), ("por_movimento", "|ret t+1|")):
+        faixas = ", ".join(f"{r['faixa']} {r['taxa_acerto']:.1%}"
+                           for _, r in erros[chave].iterrows())
+        print(f"   por tercil de {rotulo}: {faixas}")
 
 
 if __name__ == "__main__":

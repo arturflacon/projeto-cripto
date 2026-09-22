@@ -2,7 +2,7 @@
 
 **Trabalho acadêmico.** Os regimes são grupos estatísticos de dias com atributos parecidos, não categorias oficiais de mercado nem sinais de investimento.
 
-- Gerado em: `2026-09-01T01:22:44+00:00`
+- Gerado em: `2026-09-22T01:07:46+00:00`
 - Entrada: `data\processed\atributos.parquet`
 - Período: **2025-11-30 a 2026-08-30** (274 dias, 13 atributos)
 - Semente fixa: `42`
@@ -23,13 +23,7 @@ Com um único ativo não existe "mapa entre criptomoedas". Cada **dia** vira um 
 | 7 | 1488.479 | 0.223 |
 | 8 | 1367.807 | 0.243 |
 
-![Cotovelo e silhouette](escolha_k.png)
-
-> **k = 3** foi escolhido pelo maior silhouette médio — critério objetivo e reprodutível. O cotovelo confirma visualmente: a inércia cai rápido no início e depois achata, sem um joelho nítido (típico de dados contínuos, sem grupos naturalmente separados).
-
-![Dendrograma](dendrograma.png)
-
-> O dendrograma mostra a estrutura hierárquica: cada folha é um dia e a altura da fusão indica quão distantes os grupos estavam. Cortar em alturas diferentes produz mais ou menos regimes.
+> **k = 3** foi escolhido pelo maior silhouette médio — critério objetivo e reprodutível. A coluna de inércia é o método do cotovelo em forma de tabela: ela cai rápido nos primeiros k e depois achata, sem um joelho nítido (típico de dados contínuos, sem grupos naturalmente separados).
 
 ## 2. Perfil dos regimes (K-Means)
 
@@ -53,13 +47,9 @@ Um regime que descreve um *estado* deve ocupar trechos contíguos. Se aparecesse
 | 1 | 202 | 8 | 87 | 2025-12-04 | 2026-08-19 |
 | 2 | 61 | 8 | 35 | 2025-11-30 | 2026-06-26 |
 
-![Regimes no tempo](regimes_no_tempo.png)
-
 ## 4. O mapa (PCA)
 
-![Mapa PCA](mapa_pca_regimes.png)
-
-> As duas primeiras componentes explicam **56%** da variância (PC1 37%, PC2 18%). O mapa é uma sombra 2D de um espaço de 13 dimensões — grupos que parecem sobrepostos podem estar separados nas dimensões não mostradas.
+As duas primeiras componentes explicam **56%** da variância (PC1 37%, PC2 18%). A projeção é uma sombra 2D de um espaço de 13 dimensões — grupos próximos nela podem estar separados nas dimensões não representadas.
 
 **Atributos que mais pesam em cada componente:**
 

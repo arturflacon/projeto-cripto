@@ -1,0 +1,17 @@
+{
+  // Interpretador padrão do projeto: o .venv da própria pasta.
+  "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+  "python.terminal.activateEnvironment": true,
+
+  // Code Runner: usar o python do .venv (e nao o do PATH global).
+  // Atencao: aqui vale $workspaceRoot (variavel do proprio Code Runner), nao
+  // ${workspaceFolder} (que e do VS Code e NAO e expandida neste campo).
+  // O "&" e o operador de chamada do PowerShell, necessario porque o caminho
+  // do executavel vai entre aspas.
+  "code-runner.executorMap": {
+    "python": "& \"$workspaceRoot\\.venv\\Scripts\\python.exe\" -u"
+  },
+  "code-runner.fileDirectoryAsCwd": false,
+  "code-runner.runInTerminal": true,
+  "code-runner.saveFileBeforeRun": true
+}

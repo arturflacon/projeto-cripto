@@ -53,9 +53,9 @@ Rodar em ordem, a partir da raiz do projeto:
 | 1 | `python src/collect.py` | `data/processed/precos.parquet` |
 | 2 | `python src/preprocess.py` | `precos_limpo.parquet` + `reports/relatorio_qualidade_dados.md` |
 | 3 | `python src/features.py` | `atributos.parquet` (274 linhas × 13 atributos) |
-| 4 | `python src/clustering.py` | `regimes.parquet` + `reports/relatorio_regimes.md` + 4 figuras |
-| 5 | `python src/classification.py` | `reports/comparacao_classificadores.md` + matriz de confusão |
-| 6 | `python src/regression.py` | `reports/relatorio_volatilidade.md` + figura |
+| 4 | `python src/clustering.py` | `regimes.parquet` + `reports/relatorio_regimes.md` |
+| 5 | `python src/classification.py` | `reports/comparacao_classificadores.md` |
+| 6 | `python src/regression.py` | `reports/relatorio_volatilidade.md` |
 | 7 | `python src/prever.py` | `previsoes.parquet` — classificação do dia seguinte |
 
 Análise exploratória (Encontros 5-6), com 7 visualizações e interpretação escrita:
@@ -109,7 +109,7 @@ projeto-cripto/
 │   └── test_vazamento.py     # 8 verificações de vazamento temporal
 ├── app/
 │   └── dashboard.py          # painel Streamlit               (Enc. 13)
-├── reports/                  # relatórios .md e figuras
+├── reports/                  # relatórios .md
 ├── requirements.txt
 └── README.md
 ```

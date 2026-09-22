@@ -2,7 +2,7 @@
 
 Extensão do projeto. **Trabalho acadêmico**: estimativas condicionadas ao período analisado, não recomendação de investimento.
 
-- Gerado em: `2026-09-01T01:22:51+00:00`
+- Gerado em: `2026-09-22T01:07:52+00:00`
 - Entrada: `data\processed\precos_limpo.parquet`
 - Alvo: desvio-padrão dos retornos dos **7 dias seguintes**
 - Horizonte e modelo selecionados **só com o treino**
@@ -82,8 +82,6 @@ O horizonte do alvo é uma decisão de modelagem: janelas curtas medem a volatil
 | Árvore de decisão vs Baseline: persistência (vol_30d) | -180.6% |
 | Árvore de decisão vs Baseline: persistência (vol_7d) | -159.0% |
 | Árvore de decisão vs Baseline: média do treino | -182.2% |
-
-![Volatilidade observada x estimada](volatilidade_previsao.png)
 
 ## 4. A armadilha que o protocolo evitou
 

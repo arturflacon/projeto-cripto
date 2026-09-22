@@ -14,9 +14,8 @@ modelo, usando apenas o treino — ele é uma decisão de modelagem, não um dad
 problema.
 
 Entrada:  ``data/processed/precos_limpo.parquet``
-Saídas:
+Saída:
   reports/relatorio_volatilidade.md
-  reports/volatilidade_previsao.png
 
 Mesmo rigor dos Encontros 10-11: atributos só com passado, split cronológico,
 padronização dentro do Pipeline, baselines medidos antes e seleção que nunca
@@ -30,8 +29,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-import matplotlib
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import Ridge
@@ -47,15 +44,12 @@ import features
 from classification import dividir_temporal
 from preprocess import _tabela_md as tabela_md
 
-matplotlib.use("Agg")  # backend sem janela: salva a figura direto em arquivo
-
 # ----------------------------------------------------------------------
 # Configuração (parâmetros registrados para reprodutibilidade)
 # ----------------------------------------------------------------------
 RAIZ = Path(__file__).resolve().parents[1]          # .../projeto-cripto
 ENTRADA = RAIZ / "data" / "processed" / "precos_limpo.parquet"
 SAIDA_RELATORIO = RAIZ / "reports" / "relatorio_volatilidade.md"
-SAIDA_FIGURA = RAIZ / "reports" / "volatilidade_previsao.png"
 
 SEMENTE = 42
 # O horizonte do alvo é uma escolha de modelagem, não um dado do problema: uma
@@ -259,292 +253,6 @@ def r2_no_teste_por_horizonte(horizontes=HORIZONTES) -> pd.DataFrame:
 
 
 # ----------------------------------------------------------------------
-# 6. Figura
-# ----------------------------------------------------------------------
-def salvar_figura(
-    teste: pd.DataFrame, previsto: np.ndarray, nome: str, horizonte: int, destino: Path
-) -> None:
-    """Série observada x estimada e dispersão, no período de teste."""
-    observado = teste["y"].to_numpy()
-
-    fig, (cima, baixo) = plt.subplots(
-        2, 1, figsize=(10, 6.5), gridspec_kw={"height_ratios": [1.4, 1]}
-    )
-
-    cima.plot(teste["data"], observado * 100, color="#2b6cb0",
-              linewidth=1.4, label="volatilidade realizada (observada)")
-    cima.plot(teste["data"], previsto * 100, color="#c53030",
-              linewidth=1.4, linestyle="--", label=f"estimada — {nome}")
-    cima.plot(teste["data"], teste["vol_30d"] * 100, color="#a0aec0",
-              linewidth=1.1, label="baseline: persistência (vol_30d)")
-    cima.set_ylabel(f"volatilidade dos {horizonte}d seguintes (%)")
-    cima.set_title("Volatilidade futura — observada x estimada (teste retido)",
-                   fontsize=10)
-    cima.legend(fontsize=8)
-    cima.grid(alpha=0.25)
-
-    baixo.scatter(observado * 100, previsto * 100, s=22, color="#2b6cb0", alpha=0.65)
-    limites = [min(observado.min(), previsto.min()) * 100,
-               max(observado.max(), previsto.max()) * 100]
-    baixo.plot(limites, limites, color="#c53030", linestyle="--",
-               linewidth=1.2, label="estimativa perfeita")
-    baixo.set_xlabel("volatilidade observada (%)")
-    baixo.set_ylabel("volatilidade estimada (%)")
-    baixo.set_title("Dispersão — quanto mais perto da diagonal, melhor", fontsize=10)
-    baixo.legend(fontsize=8)
-    baixo.grid(alpha=0.25)
-
-    fig.tight_layout()
-    fig.savefig(destino, dpi=150)
-    plt.close(fig)
-
-
-# ----------------------------------------------------------------------
-# 7. Relatório
-# ----------------------------------------------------------------------
-def _fmt(df: pd.DataFrame, casas: int = 4) -> list[list]:
-    """Formata coluna a coluna, para contagens não virarem ``40.000``."""
-    saida = df.copy()
-    for coluna in saida.columns:
-        if pd.api.types.is_float_dtype(saida[coluna]):
-            saida[coluna] = saida[coluna].map(lambda v: f"{v:.{casas}f}")
-        else:
-            saida[coluna] = saida[coluna].astype(str)
-    return saida.to_numpy().tolist()
-
-
-def escrever_relatorio(
-    caminho: Path,
-    *,
-    horizonte: int,
-    melhor: str,
-    tabela: pd.DataFrame,
-    treino: pd.DataFrame,
-    teste: pd.DataFrame,
-    baselines: dict[str, dict[str, float]],
-    selecao: pd.DataFrame,
-    resultados: pd.DataFrame,
-    ganhos: dict[str, float],
-    correlacao: float,
-    armadilha: pd.DataFrame,
-) -> None:
-    """Escreve o relatório da regressão em Markdown."""
-    agora = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    p: list[str] = []
-
-    p.append("# Regressão da volatilidade futura — Encontro 12\n")
-    p.append(
-        "Extensão do projeto. **Trabalho acadêmico**: estimativas condicionadas ao "
-        "período analisado, não recomendação de investimento.\n"
-    )
-    p.append(f"- Gerado em: `{agora}`")
-    p.append(f"- Entrada: `{ENTRADA.relative_to(RAIZ)}`")
-    p.append(f"- Alvo: desvio-padrão dos retornos dos **{horizonte} dias seguintes**")
-    p.append("- Horizonte e modelo selecionados **só com o treino**")
-    p.append(f"- Semente fixa: `{SEMENTE}`")
-    p.append("")
-
-    p.append("## Por que volatilidade, e não direção\n")
-    p.append(
-        "A escolha vem da EDA (`notebooks/eda_solana.ipynb`), que encontrou dois "
-        "indícios independentes na mesma direção:\n\n"
-        "| evidência | direção | magnitude |\n| --- | --- | --- |\n"
-        "| autocorrelação (lags 1-3, 5) | dentro da banda (ruído) | 0,16 / 0,17 / 0,13 / 0,12 |\n"
-        "| correlação com volume | +0,003 | +0,600 |\n\n"
-        "A série informa *quanto* o preço se move, quase nada sobre *para onde*. "
-        "Esta etapa testa se essa estrutura é suficiente para **estimar** a "
-        "volatilidade futura melhor que referências triviais.\n"
-    )
-
-    p.append("## Desenho experimental\n")
-    p.append(
-        tabela_md(
-            ["conjunto", "dias", "período", "volatilidade média do alvo"],
-            [
-                ["treino", len(treino),
-                 f"{treino['data'].min().date()} a {treino['data'].max().date()}",
-                 f"{treino['y'].mean():.2%}"],
-                ["teste", len(teste),
-                 f"{teste['data'].min().date()} a {teste['data'].max().date()}",
-                 f"{teste['y'].mean():.2%}"],
-                ["total", len(tabela),
-                 f"{tabela['data'].min().date()} a {tabela['data'].max().date()}",
-                 f"{tabela['y'].mean():.2%}"],
-            ],
-        )
-    )
-    p.append(
-        f"\n> **Sobreposição do alvo.** Como o alvo é uma janela de {horizonte} dias, "
-        f"linhas vizinhas compartilham até {horizonte - 1} dias. O número de janelas "
-        f"realmente independentes é da ordem de {len(tabela) // horizonte}, não "
-        f"{len(tabela)} — qualquer diferença pequena entre métodos está dentro do "
-        "ruído. É também mais uma razão para o split ser temporal: embaralhar "
-        "colocaria janelas quase idênticas nos dois lados da divisão.\n\n"
-        f"> **Deslocamento de nível.** A volatilidade média do teste é "
-        f"{teste['y'].mean() / treino['y'].mean() - 1:+.1%} em relação ao treino, "
-        "com variância bem menor. Isso penaliza o R² de **todos** os estimadores, "
-        "inclusive dos baselines — voltamos a isso na discussão.\n"
-    )
-
-    p.append("## 1. Baselines (medidos antes dos modelos)\n")
-    p.append(
-        tabela_md(
-            ["baseline", "RMSE", "MAE", "R²"],
-            [[nome, f"{m['rmse']:.4f}", f"{m['mae']:.4f}", f"{m['r2']:+.3f}"]
-             for nome, m in baselines.items()],
-        )
-    )
-    p.append(
-        f"\n> A correlação entre `vol_30d` (hoje) e a volatilidade realizada dos "
-        f"{horizonte} dias seguintes é **{correlacao:+.3f}** — é o agrupamento de "
-        "volatilidade da EDA aparecendo como capacidade preditiva direta. Fraca, "
-        "mas real; para comparar, a correlação equivalente para *direção* é "
-        "praticamente zero.\n"
-    )
-
-    p.append("## 2. Seleção de horizonte e modelo (walk-forward, só no treino)\n")
-    p.append(
-        "O horizonte do alvo é uma decisão de modelagem: janelas curtas medem a "
-        "volatilidade com muito erro amostral (o desvio-padrão de 7 retornos tem "
-        "~29% de erro relativo), janelas longas alisam o sinal. Por isso ele é "
-        f"selecionado junto com o modelo, entre {len(HORIZONTES)} horizontes x "
-        f"{len(construir_modelos())} modelos — **sempre dentro do treino**:\n"
-    )
-    p.append(
-        tabela_md(
-            ["horizonte", "modelo", "R² médio (walk-forward)", "desvio"],
-            [[int(r["horizonte"]), r["modelo"], f"{r['r2_media']:+.3f}",
-              f"{r['r2_desvio']:.3f}"]
-             for _, r in selecao.iterrows()],
-        )
-    )
-    p.append(
-        f"\n> Selecionado: **{melhor}** com horizonte de **{horizonte} dias** — "
-        "a melhor das configurações testadas. Note que **todas** têm R² médio "
-        "negativo no walk-forward: nenhuma combinação supera, de forma estável, "
-        "prever a média da própria partição.\n"
-    )
-
-    p.append("## 3. Avaliação final no teste retido\n")
-    p.append(
-        tabela_md(
-            ["modelo", "RMSE", "MAE", "R²"],
-            _fmt(resultados.sort_values("rmse"), 4),
-        )
-    )
-    p.append("\n**Ganho do modelo selecionado sobre os baselines** "
-             "(redução do erro quadrático):\n")
-    p.append(
-        tabela_md(
-            ["comparação", "ganho"],
-            [[nome, f"{v:+.1%}"] for nome, v in ganhos.items()],
-        )
-    )
-    p.append(f"\n![Volatilidade observada x estimada]({SAIDA_FIGURA.name})\n")
-
-    p.append("## 4. A armadilha que o protocolo evitou\n")
-    p.append(
-        "Durante o desenvolvimento, calcular o R² **no teste** para cada horizonte "
-        "produziu esta tabela:\n"
-    )
-    p.append(
-        tabela_md(
-            ["horizonte", "melhor modelo no teste", "R² no teste"],
-            [[int(r["horizonte"]), r["melhor_no_teste"], f"{r['r2_teste']:+.3f}"]
-             for _, r in armadilha.iterrows()],
-        )
-    )
-    linha_boa = armadilha.loc[armadilha["r2_teste"].idxmax()]
-    h_bom = int(linha_boa["horizonte"])
-    r2_bom = float(linha_boa["r2_teste"])
-    treino_do_bom = selecao[selecao["horizonte"] == h_bom]["r2_media"].max()
-    posicao = int((selecao["r2_media"] > treino_do_bom).sum()) + 1
-    p.append(
-        f"\nEscolher o horizonte por essa tabela levaria a reportar "
-        f"**R² = {r2_bom:+.3f}** com h={h_bom} — um resultado aparentemente bom. "
-        f"Mas o walk-forward no treino coloca a melhor configuração de h={h_bom} "
-        f"em **{posicao}º lugar** entre {len(selecao)}, com R² médio de "
-        f"{treino_do_bom:+.3f}.\n\n"
-        f"> Ou seja: aquele R² positivo era **sorte da janela de teste específica**, "
-        "não capacidade preditiva. Um trabalho que escolhesse o horizonte olhando o "
-        "resultado final reportaria um sucesso inexistente. É exatamente esse tipo "
-        "de erro que a seleção restrita ao treino previne — e ele é sutil, porque "
-        "não envolve vazamento nos atributos nem no rótulo, apenas na **escolha de "
-        "hiperparâmetro**.\n"
-    )
-
-    p.append("## 5. Discussão\n")
-    p.append(_discussao(baselines, resultados, melhor, horizonte, correlacao, teste, treino))
-
-    caminho.write_text("\n".join(p), encoding="utf-8")
-
-
-def _discussao(
-    baselines: dict[str, dict[str, float]],
-    resultados: pd.DataFrame,
-    melhor: str,
-    horizonte: int,
-    correlacao: float,
-    teste: pd.DataFrame,
-    treino: pd.DataFrame,
-) -> str:
-    """Leitura honesta dos resultados, com os números do experimento."""
-    linha = dict(resultados.set_index("modelo").loc[melhor])
-    nome_ref = min(baselines, key=lambda n: baselines[n]["rmse"])
-    ref = baselines[nome_ref]
-    ganho = ganho_sobre(ref, linha)
-    n_efetivo = len(teste) // horizonte
-
-    if ganho > 0:
-        veredito = (
-            f"O modelo selecionado (**{melhor}**, h={horizonte}) errou "
-            f"**{ganho:.1%}** menos, em erro quadrático, que o melhor baseline "
-            f"(*{nome_ref}*). É uma vantagem pequena, medida sobre cerca de "
-            f"{n_efetivo} janelas independentes — bem dentro do que o acaso produz "
-            "nesse tamanho de amostra."
-        )
-    else:
-        veredito = (
-            f"O modelo selecionado (**{melhor}**, h={horizonte}) **não** superou o "
-            f"melhor baseline (*{nome_ref}*): erro quadrático {abs(ganho):.1%} maior."
-        )
-
-    return (
-        f"{veredito}\n\n"
-        "**Todos os R² são negativos — inclusive os dos baselines.** Isso merece "
-        "explicação, porque parece pior do que é. O R² compara o erro do estimador "
-        "com o de prever a **média do conjunto de teste**. Como a volatilidade do "
-        f"teste ficou {teste['y'].mean() / treino['y'].mean() - 1:+.1%} abaixo da do "
-        "treino, essa média é um alvo que nenhum método honesto poderia conhecer de "
-        "antemão. R² negativo aqui indica **deslocamento de nível entre os "
-        "períodos**, não que os modelos sejam absurdos — o baseline \"média do "
-        "treino\", que é o estimador mais conservador possível, também fica "
-        "negativo.\n\n"
-        "**O sinal existe, mas é fraco e não sobrevive à validação.** A correlação "
-        f"de {correlacao:+.3f} entre volatilidade passada e futura confirma o "
-        "agrupamento de volatilidade que a EDA encontrou — é real, e é muito maior "
-        "que o sinal disponível para direção. Mas transformá-lo em estimativa que "
-        "supere referências triviais, com 274 observações diárias sobrepostas de um "
-        "único ativo, não funcionou: **nenhuma das 16 configurações testadas teve "
-        "R² médio positivo no walk-forward do treino**.\n\n"
-        "**O que este resultado significa para o projeto.** A hipótese da EDA — "
-        "\"magnitude é mais previsível que direção\" — se confirma no diagnóstico "
-        "(correlação de 0,30 contra ~0) mas não se converte em desempenho preditivo "
-        "aqui. A conclusão honesta não é \"volatilidade é imprevisível\", e sim: "
-        "*com esta amostra, estes atributos e este protocolo, não conseguimos "
-        "demonstrar previsibilidade além da persistência*. Literatura de finanças "
-        "obtém ganhos reais nessa tarefa com modelos próprios da área (GARCH, "
-        "volatilidade realizada intradiária) e séries muito mais longas — fora do "
-        "escopo desta disciplina.\n\n"
-        "**Limitações.** (i) Janelas sobrepostas reduzem o número efetivo de "
-        f"amostras a ~{n_efetivo} no teste; (ii) o período é de queda acentuada, e "
-        "o teste é sistematicamente mais calmo que o treino; (iii) volatilidade "
-        "estimada não é risco garantido — são estimativas condicionadas ao período "
-        "analisado, sem valor de recomendação.\n"
-    )
-
-
-# ----------------------------------------------------------------------
 # Orquestração
 # ----------------------------------------------------------------------
 def main() -> None:
@@ -578,7 +286,7 @@ def main() -> None:
         print(f"   {nome:36s} RMSE={m['rmse']:.4f}  R²={m['r2']:+.3f}")
 
     print("\n4. Avaliação final no teste retido:")
-    resultados, previsoes = avaliar_no_teste(treino, teste)
+    resultados, _ = avaliar_no_teste(treino, teste)
     for _, r in resultados.sort_values("rmse").iterrows():
         print(f"   {r['modelo']:20s} RMSE={r['rmse']:.4f}  MAE={r['mae']:.4f}  "
               f"R²={r['r2']:+.3f}")
@@ -598,7 +306,6 @@ def main() -> None:
         print(f"   h={int(r['horizonte']):2d}: melhor no teste seria "
               f"{r['melhor_no_teste']:20s} R²={r['r2_teste']:+.3f}")
 
-    salvar_figura(teste, previsoes[melhor], melhor, horizonte, SAIDA_FIGURA)
     escrever_relatorio(
         SAIDA_RELATORIO,
         horizonte=horizonte,
@@ -615,7 +322,6 @@ def main() -> None:
     )
 
     print(f"\nRelatório: {SAIDA_RELATORIO}")
-    print(f"Figura:    {SAIDA_FIGURA}")
 
 
 if __name__ == "__main__":

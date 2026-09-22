@@ -2,7 +2,7 @@
 
 Encontros 10-11. **Trabalho acadêmico**: os resultados são estimativas condicionadas ao período analisado e não constituem recomendação de investimento.
 
-- Gerado em: `2026-09-01T01:22:47+00:00`
+- Gerado em: `2026-09-22T01:07:49+00:00`
 - Entrada: `data\processed\atributos.parquet`
 - Alvo: `direcao`
 - Semente fixa: `42`
@@ -59,8 +59,6 @@ Rodado **apenas dentro do treino**, para que a escolha do melhor modelo não enx
 | --- | --- | --- |
 | **observado 0** | 19 | 21 |
 | **observado 1** | 14 | 29 |
-
-![Matriz de confusão](matriz_confusao.png)
 
 ## 5. Análise de erros
 

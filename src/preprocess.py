@@ -1,26 +1,25 @@
 """preprocess.py — Limpeza e qualidade dos dados (Encontro 4).
 
-Lê ``data/processed/precos.parquet`` (saída de ``collect.py``) e produz:
-
-* ``data/processed/precos_limpo.parquet`` — série diária contínua e limpa da Solana;
-* ``reports/relatorio_qualidade_dados.md`` — o "relatório de problemas" do Encontro 4.
+Lê ``data/processed/precos.parquet`` (saída de ``collect.py``) e produz
+``data/processed/precos_limpo.parquet`` — série diária contínua e limpa da Solana.
+As contagens de qualidade (duplicatas, lacunas, valores inválidos, ativos
+removidos) são impressas no terminal.
 
 Etapas (seção 7 da apostila):
   1. carregar, ordenar por data, garantir tipos;
   2. padronizar datas (UTC, sem hora) e remover duplicidades por (id, data);
   3. construir índice diário contínuo e reindexar para expor lacunas;
-  4. relatar lacunas (total, blocos, maior lacuna contígua, datas);
+  4. diagnosticar lacunas (total, blocos, maior lacuna contígua, datas);
   5. política de preenchimento parametrizável (lacunas curtas x longas);
   6. sanidade de valores (preço/capitalização <= 0, volume negativo);
   7. mecanismo genérico de "ativos removidos" (poucas observações ou muitas lacunas);
-  8. escrever o Parquet limpo e o relatório ``.md`` com as contagens.
+  8. escrever o Parquet limpo.
 
 Trabalho acadêmico: nada aqui é recomendação de investimento.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -32,7 +31,6 @@ import pandas as pd
 RAIZ = Path(__file__).resolve().parents[1]          # .../projeto-cripto
 ENTRADA = RAIZ / "data" / "processed" / "precos.parquet"
 SAIDA_PARQUET = RAIZ / "data" / "processed" / "precos_limpo.parquet"
-SAIDA_RELATORIO = RAIZ / "reports" / "relatorio_qualidade_dados.md"
 
 # Lacuna "curta" (<= limiar) é interpolada; lacuna "longa" (> limiar) fica NaN.
 LIMIAR_LACUNA_DIAS = 3
@@ -234,17 +232,16 @@ def avaliar_ativo(diagnostico: dict, obs_reais: int) -> str | None:
 
 
 # ----------------------------------------------------------------------
-# 8. Relatório
+# 8. Resumo de qualidade
 # ----------------------------------------------------------------------
 def _tabela_md(cabecalho: list[str], linhas: list[list]) -> str:
-    """Monta uma tabela Markdown simples."""
+    """Monta uma tabela Markdown simples (usada pelo relatório de previsões)."""
     sep = ["---"] * len(cabecalho)
     corpo = [cabecalho, sep] + [[str(c) for c in linha] for linha in linhas]
     return "\n".join("| " + " | ".join(linha) + " |" for linha in corpo)
 
 
-def escrever_relatorio(
-    caminho: Path,
+def resumir_qualidade(
     *,
     periodo: tuple[pd.Timestamp, pd.Timestamp],
     n_obs_original: int,
@@ -254,148 +251,26 @@ def escrever_relatorio(
     resumos_preenchimento: dict[str, dict],
     sanidade: dict[str, dict],
     removidos: list[dict],
-    mantidos: list[str],
 ) -> None:
-    """Escreve o relatório de qualidade em Markdown."""
-    agora = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    partes: list[str] = []
-    partes.append("# Relatório de qualidade dos dados — Encontro 4\n")
-    partes.append(
-        "Trabalho acadêmico (Aprendizagem de Máquina). Nada aqui é recomendação "
-        "de investimento.\n"
-    )
-    partes.append(f"- Gerado em: `{agora}`")
-    partes.append(f"- Entrada: `{ENTRADA.relative_to(RAIZ)}`")
-    partes.append(f"- Saída limpa: `{SAIDA_PARQUET.relative_to(RAIZ)}`")
-    partes.append(
-        f"- Período coberto: **{periodo[0].date()} a {periodo[1].date()}**"
-    )
-    partes.append("")
-    partes.append("## Parâmetros usados\n")
-    partes.append(f"- `LIMIAR_LACUNA_DIAS` = {LIMIAR_LACUNA_DIAS}")
-    partes.append(f"- `N_MIN_OBS` = {N_MIN_OBS}")
-    partes.append(f"- `FRACAO_MAX_LACUNAS` = {FRACAO_MAX_LACUNAS}")
-    partes.append("")
-
-    partes.append("## Resumo geral\n")
-    partes.append(
-        _tabela_md(
-            ["Métrica", "Valor"],
-            [
-                ["Observações no arquivo bruto", n_obs_original],
-                ["Duplicatas (id, data) removidas", duplicatas],
-                ["Observações após limpeza (série contínua)", n_obs_final],
-                ["Ativos mantidos", len(mantidos)],
-                ["Ativos removidos", len(removidos)],
-            ],
-        )
-    )
-    partes.append("")
-
-    partes.append("## Lacunas por ativo\n")
-    linhas = []
+    """Imprime no terminal as contagens de qualidade da limpeza."""
+    print(f"\nQualidade dos dados — {periodo[0].date()} a {periodo[1].date()}")
+    print(f"  observações brutas: {n_obs_original} | duplicatas removidas: {duplicatas} "
+          f"| após limpeza: {n_obs_final}")
     for d in diagnosticos:
-        linhas.append(
-            [
-                d["id"],
-                d["dias_periodo"],
-                d["dias_ausentes"],
-                d["n_blocos"],
-                d["maior_lacuna"],
-                f"{d['fracao_lacunas']:.1%}",
-            ]
-        )
-    partes.append(
-        _tabela_md(
-            ["id", "dias no período", "dias ausentes", "blocos de lacuna",
-             "maior lacuna (dias)", "fração de lacunas"],
-            linhas,
-        )
-    )
-    partes.append("")
-
-    for d in diagnosticos:
-        partes.append(f"### `{d['id']}` — detalhe das lacunas\n")
-        if not d["blocos"]:
-            partes.append("Sem lacunas: série diária já contígua no período.\n")
-            continue
-        partes.append(
-            _tabela_md(
-                ["início", "fim", "dias", "classificação"],
-                [
-                    [
-                        b["inicio"],
-                        b["fim"],
-                        b["dias"],
-                        "curta (interpolada)"
-                        if b["dias"] <= LIMIAR_LACUNA_DIAS
-                        else "longa (mantida como NaN)",
-                    ]
-                    for b in d["blocos"]
-                ],
-            )
-        )
-        partes.append("")
-
-    partes.append("## Preenchimento aplicado\n")
-    linhas = []
-    for identificador, r in resumos_preenchimento.items():
-        linhas.append(
-            [
-                identificador,
-                r["linhas_preenchidas"],
-                len(r["lacunas_longas"]),
-                r["dias_lacuna_longa"],
-            ]
-        )
-    partes.append(
-        _tabela_md(
-            ["id", "linhas preenchidas (lacunas curtas)",
-             "lacunas longas", "dias em lacuna longa (NaN)"],
-            linhas,
-        )
-    )
-    partes.append(
-        "\n> Lacunas curtas: preço/capitalização por interpolação linear no tempo "
-        "e volume por `ffill`, com a coluna booleana `preenchido = True`.\n"
-        "> Lacunas longas: **não preenchidas** (a apostila proíbe preenchimento "
-        "artificial de trechos longos); use `recortar_maior_trecho_contiguo()` "
-        "para obter uma subsérie sem NaN quando necessário.\n"
-    )
-
-    partes.append("## Sanidade de valores\n")
-    partes.append(
-        _tabela_md(
-            ["id", "preço <= 0", "capitalização <= 0", "volume < 0"],
-            [
-                [
-                    identificador,
-                    s["preco_nao_positivo"],
-                    s["capitalizacao_nao_positiva"],
-                    s["volume_negativo"],
-                ]
-                for identificador, s in sanidade.items()
-            ],
-        )
-    )
-    partes.append("\n> Valores fora de faixa são convertidos para NaN e contam como lacuna.\n")
-
-    partes.append("## Ativos removidos\n")
+        r = resumos_preenchimento.get(d["id"], {})
+        s = sanidade.get(d["id"], {})
+        print(f"  {d['id']}: {d['dias_ausentes']} dia(s) ausente(s) em {d['n_blocos']} "
+              f"bloco(s), maior lacuna {d['maior_lacuna']} | "
+              f"preenchidas {r.get('linhas_preenchidas', 0)}, "
+              f"lacunas longas {len(r.get('lacunas_longas', []))} | "
+              f"preço<=0: {s.get('preco_nao_positivo', 0)}, "
+              f"cap<=0: {s.get('capitalizacao_nao_positiva', 0)}, "
+              f"volume<0: {s.get('volume_negativo', 0)}")
     if removidos:
-        partes.append(
-            _tabela_md(
-                ["id", "motivo"],
-                [[r["id"], r["motivo"]] for r in removidos],
-            )
-        )
+        for r in removidos:
+            print(f"  ativo removido: {r['id']} ({r['motivo']})")
     else:
-        partes.append(
-            "Nenhum ativo removido. (O mecanismo genérico — `N_MIN_OBS` e "
-            "`FRACAO_MAX_LACUNAS` — permanece ativo para coletas futuras.)"
-        )
-    partes.append("")
-
-    caminho.write_text("\n".join(partes), encoding="utf-8")
+        print("  nenhum ativo removido")
 
 
 # ----------------------------------------------------------------------
@@ -408,7 +283,6 @@ def main() -> None:
             "Rode primeiro `python src/collect.py`."
         )
     SAIDA_PARQUET.parent.mkdir(parents=True, exist_ok=True)
-    SAIDA_RELATORIO.parent.mkdir(parents=True, exist_ok=True)
 
     bruto = carregar(ENTRADA)
     n_obs_original = len(bruto)
@@ -457,8 +331,7 @@ def main() -> None:
     )
     final.to_parquet(SAIDA_PARQUET, index=False)
 
-    escrever_relatorio(
-        SAIDA_RELATORIO,
+    resumir_qualidade(
         periodo=periodo,
         n_obs_original=n_obs_original,
         n_obs_final=len(final),
@@ -467,11 +340,10 @@ def main() -> None:
         resumos_preenchimento=resumos_preenchimento,
         sanidade=sanidade,
         removidos=removidos,
-        mantidos=mantidos,
     )
 
-    print(f"\nParquet limpo: {SAIDA_PARQUET}  ({len(final)} linhas)")
-    print(f"Relatório:     {SAIDA_RELATORIO}")
+    print(f"\nParquet limpo: {SAIDA_PARQUET}  ({len(final)} linhas, "
+          f"{len(mantidos)} ativo(s))")
 
 
 if __name__ == "__main__":
