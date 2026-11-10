@@ -240,6 +240,31 @@ def teste_tabela_sem_nan_nem_infinito() -> str:
     return f"{len(tabela)} linhas x {len(colunas)} atributos, sem NaN nem infinitos"
 
 
+def teste_persistencia_usa_so_o_rotulo_de_ontem() -> str:
+    """``y_anterior`` (baseline de persistência) deve ser o rótulo de t-1, fora de X.
+
+    O rótulo de t-1 depende de ``preco(t)`` e ``preco(t-1)`` — já conhecidos em t.
+    No alvo ``direcao`` ele coincide com ``ret_1d > 0``; nos dois alvos deve ser
+    igual ao ``y`` do dia anterior.
+    """
+    precos = _carregar()
+    assert "y_anterior" not in features.colunas_atributos(), "y_anterior não pode estar em X"
+
+    for alvo in ("direcao", "acima_mediana"):
+        tabela = features.montar_tabela(precos, alvo).set_index("data")
+        datas_ontem = tabela.index - pd.Timedelta(days=1)
+        tem_ontem = datas_ontem.isin(tabela.index)
+        esperado = tabela["y"].reindex(datas_ontem[tem_ontem]).to_numpy()
+        obtido = tabela.loc[tem_ontem, "y_anterior"].astype(int).to_numpy()
+        assert (esperado == obtido).all(), f"[{alvo}] y_anterior != y do dia anterior"
+
+    direcao = features.montar_tabela(precos, "direcao")
+    assert (direcao["y_anterior"].astype(int) == (direcao["ret_1d"] > 0).astype(int)).all(), (
+        "no alvo direcao, a persistência deveria coincidir com ret_1d > 0"
+    )
+    return "y_anterior = rótulo de t-1 nos dois alvos, fora de X"
+
+
 # ----------------------------------------------------------------------
 # Execução direta
 # ----------------------------------------------------------------------
@@ -252,6 +277,7 @@ TESTES = [
     teste_split_e_cronologico,
     teste_escala_ajustada_so_no_treino,
     teste_tabela_sem_nan_nem_infinito,
+    teste_persistencia_usa_so_o_rotulo_de_ontem,
 ]
 
 

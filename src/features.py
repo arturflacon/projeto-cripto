@@ -165,11 +165,16 @@ def montar_tabela(
     for _, grupo in df.groupby("id", sort=True):
         com_atributos = construir_atributos(grupo)
         com_atributos["y"] = construir_alvo(com_atributos, alvo)
+        # Rótulo de ontem (t-1): depende só de preços até t, logo já é conhecido
+        # em t. NÃO entra em X — serve ao baseline de persistência, que repete o
+        # último resultado observado qualquer que seja o alvo. O índice é diário
+        # e contínuo, então shift(1) é exatamente o dia anterior.
+        com_atributos["y_anterior"] = com_atributos["y"].shift(1)
         partes.append(com_atributos)
 
     tabela = pd.concat(partes, ignore_index=True)
 
-    colunas = ["id", "data", "preco", *colunas_atributos(), "y"]
+    colunas = ["id", "data", "preco", *colunas_atributos(), "y_anterior", "y"]
     tabela = tabela[colunas]
 
     # o aquecimento das janelas (NaN iniciais) sai sempre
@@ -180,6 +185,7 @@ def montar_tabela(
 
     # tipo inteiro; nulável quando as linhas sem rótulo são preservadas
     tabela["y"] = tabela["y"].astype("Int64" if manter_sem_rotulo else "int64")
+    tabela["y_anterior"] = tabela["y_anterior"].astype("Int64")
 
     return tabela.sort_values(["id", "data"]).reset_index(drop=True)
 

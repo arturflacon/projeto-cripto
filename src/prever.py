@@ -20,10 +20,15 @@ Classificador e regressor são escolhidos por ``TimeSeriesSplit`` **antes** da
 janela exibida, com dados estritamente anteriores a ela — a escolha não enxerga
 os dias previstos.
 
+Uso:
+  python src/prever.py              -> janela padrão (DIAS_HISTORICO = 45 dias)
+  python src/prever.py --dias 90    -> outra janela, quando precisar
+
 Saídas:
   data/processed/previsoes.parquet            -> direção (consumido pelo dashboard)
   data/processed/previsoes_regressao.parquet  -> preço estimado
-  reports/previsoes.md                        -> o relatório de previsões
+  reports/previsoes.md                        -> o relatório: previsões × preço real, dia a dia
+  reports/previsoes.png                       -> gráfico do relatório
 
 **Trabalho acadêmico.** As saídas são estimativas de modelos estatísticos a partir
 de padrões passados, condicionadas ao período analisado. Não são previsão
@@ -32,11 +37,18 @@ confiável do mercado nem recomendação de investimento.
 
 from __future__ import annotations
 
+import argparse
 from datetime import datetime, timezone
 from pathlib import Path
 
+import matplotlib
 import numpy as np
 import pandas as pd
+from scipy.stats import binom
+
+matplotlib.use("Agg")                    # gera o PNG sem abrir janela
+import matplotlib.dates as mdates        # noqa: E402
+import matplotlib.pyplot as plt          # noqa: E402
 from sklearn.metrics import balanced_accuracy_score
 from sklearn.model_selection import TimeSeriesSplit
 
@@ -53,6 +65,7 @@ ENTRADA = RAIZ / "data" / "processed" / "precos_limpo.parquet"
 SAIDA = RAIZ / "data" / "processed" / "previsoes.parquet"
 SAIDA_REGRESSAO = RAIZ / "data" / "processed" / "previsoes_regressao.parquet"
 SAIDA_RELATORIO = RAIZ / "reports" / "previsoes.md"
+SAIDA_GRAFICO = RAIZ / "reports" / "previsoes.png"
 
 # Modelos fixados à mão (chaves de `classification.construir_modelos()` e
 # `regression.construir_modelos()`). ``None`` = escolher por walk-forward nos
@@ -60,8 +73,9 @@ SAIDA_RELATORIO = RAIZ / "reports" / "previsoes.md"
 CLASSIFICADOR = None
 REGRESSOR = None
 
-# Quantos dias recentes re-prever para exibir o comportamento dos modelos.
-DIAS_HISTORICO = 15
+# Quantos dias recentes re-prever para exibir o comportamento dos modelos
+# (padrão; pode ser trocado na linha de comando com `--dias N`).
+DIAS_HISTORICO = 45
 
 # Partições do walk-forward usado para escolher os modelos (só com dados
 # anteriores à janela exibida).
@@ -408,25 +422,160 @@ def imprimir_dia_seguinte(
 # ----------------------------------------------------------------------
 # 5. Relatório
 # ----------------------------------------------------------------------
-def escrever_relatorio(
-    caminho: Path,
-    *,
+# Cores do gráfico (paleta de referência validada para daltonismo: azul x laranja).
+# Acerto/erro usa cores de status, mas a informação vai na FORMA do marcador
+# (círculo = acertou, X = errou) — verde e vermelho sozinhos não bastam para
+# quem tem deuteranopia.
+COR_REAL = "#2a78d6"
+COR_ESTIMADO = "#eb6834"
+COR_ACERTO = "#0ca30c"
+COR_ERRO = "#d03b3b"
+COR_SUPERFICIE = "#fcfcfb"
+COR_TEXTO = "#0b0b0b"
+COR_TEXTO_SEC = "#52514e"
+COR_GRADE = "#e6e5e0"
+
+
+def consolidar(
     historico: pd.DataFrame,
     previsao: dict,
     historico_reg: pd.DataFrame,
     previsao_reg: dict,
+) -> pd.DataFrame:
+    """Junta direção e preço numa tabela única: uma linha por dia-alvo.
+
+    A última linha é o dia seguinte, ainda sem preço real (``NaN``).
+    """
+    direcao = pd.concat([historico, pd.DataFrame([previsao])], ignore_index=True)
+    preco = pd.concat([historico_reg, pd.DataFrame([previsao_reg])], ignore_index=True)
+
+    tabela = direcao[["data_alvo", "preco_base", "preco_alvo", "classificado",
+                      "observado", "acertou"]].merge(
+        preco[["data_alvo", "preco_estimado", "ret_estimado", "erro", "erro_pct"]],
+        on="data_alvo", how="inner",
+    )
+    for coluna in ("preco_base", "preco_alvo", "preco_estimado", "ret_estimado",
+                   "erro", "erro_pct"):
+        tabela[coluna] = pd.to_numeric(tabela[coluna], errors="coerce")
+    tabela["variacao_real"] = tabela["preco_alvo"] / tabela["preco_base"] - 1.0
+    return tabela.sort_values("data_alvo").reset_index(drop=True)
+
+
+def desenhar_grafico(tabela: pd.DataFrame, caminho: Path, nome_regressor: str,
+                     nome_classificador: str) -> None:
+    """Gráfico do relatório: preço real × estimado (em cima) e acertos de direção (embaixo).
+
+    Dois painéis com o mesmo eixo de datas — nunca dois eixos y no mesmo painel.
+    """
+    conhecidos = tabela[tabela["preco_alvo"].notna()]
+    pendente = tabela[tabela["preco_alvo"].isna()]
+
+    fig, (ax, ax_dir) = plt.subplots(
+        2, 1, figsize=(11, 6.2), sharex=True,
+        gridspec_kw={"height_ratios": [5, 1], "hspace": 0.12},
+    )
+    fig.patch.set_facecolor(COR_SUPERFICIE)
+    for eixo in (ax, ax_dir):
+        eixo.set_facecolor(COR_SUPERFICIE)
+        for lado in ("top", "right", "left"):
+            eixo.spines[lado].set_visible(False)
+        eixo.spines["bottom"].set_color(COR_GRADE)
+        eixo.tick_params(colors=COR_TEXTO_SEC, labelsize=9, length=0)
+
+    # --- painel de preço
+    ax.grid(axis="y", color=COR_GRADE, linewidth=0.8)
+    ax.set_axisbelow(True)
+    ax.plot(conhecidos["data_alvo"], conhecidos["preco_alvo"], color=COR_REAL,
+            linewidth=2, marker="o", markersize=4, label="preço real", zorder=3)
+    ax.plot(conhecidos["data_alvo"], conhecidos["preco_estimado"], color=COR_ESTIMADO,
+            linewidth=2, linestyle="--", marker="o", markersize=3.5,
+            label=f"preço estimado ({nome_regressor})", zorder=2)
+
+    # rótulos diretos só nas pontas (o último real e a estimativa pendente)
+    ultimo = conhecidos.iloc[-1]
+    ax.annotate(f"real {ultimo['preco_alvo']:.2f}",
+                (ultimo["data_alvo"], ultimo["preco_alvo"]),
+                xytext=(6, 8), textcoords="offset points",
+                fontsize=9, color=COR_TEXTO)
+    if not pendente.empty:
+        amanha = pendente.iloc[-1]
+        ax.plot([ultimo["data_alvo"], amanha["data_alvo"]],
+                [ultimo["preco_alvo"], amanha["preco_estimado"]],
+                color=COR_ESTIMADO, linewidth=1.5, linestyle=":", zorder=2)
+        ax.plot(amanha["data_alvo"], amanha["preco_estimado"], marker="o",
+                markersize=9, markerfacecolor=COR_SUPERFICIE,
+                markeredgecolor=COR_ESTIMADO, markeredgewidth=2, zorder=4)
+        ax.annotate(f"{amanha['data_alvo']:%d/%m} estimado\n{amanha['preco_estimado']:.2f}",
+                    (amanha["data_alvo"], amanha["preco_estimado"]),
+                    xytext=(8, -26), textcoords="offset points",
+                    fontsize=9, color=COR_TEXTO)
+
+    ax.set_ylabel("USD", color=COR_TEXTO_SEC, fontsize=9)
+    legenda = ax.legend(loc="upper right", frameon=False, fontsize=9)
+    for texto in legenda.get_texts():
+        texto.set_color(COR_TEXTO)
+
+    # --- painel de direção: forma do marcador carrega o acerto
+    acertos = conhecidos[conhecidos["acertou"].astype(bool)]
+    erros = conhecidos[~conhecidos["acertou"].astype(bool)]
+    ax_dir.scatter(acertos["data_alvo"], np.zeros(len(acertos)), marker="o", s=40,
+                   color=COR_ACERTO, label="direção: acertou", zorder=3)
+    ax_dir.scatter(erros["data_alvo"], np.zeros(len(erros)), marker="x", s=46,
+                   linewidths=2, color=COR_ERRO, label="direção: errou", zorder=3)
+    ax_dir.set_yticks([])
+    ax_dir.set_ylim(-1, 1)
+    ax_dir.set_ylabel(nome_classificador, color=COR_TEXTO_SEC, fontsize=8,
+                      rotation=0, ha="right", va="center")
+    legenda_dir = ax_dir.legend(loc="upper center", bbox_to_anchor=(0.5, -0.55),
+                                ncol=2, frameon=False, fontsize=9)
+    for texto in legenda_dir.get_texts():
+        texto.set_color(COR_TEXTO)
+
+    # folga à direita para o rótulo da estimativa pendente não ser cortado
+    ax_dir.set_xlim(tabela["data_alvo"].min() - pd.Timedelta(days=1),
+                    tabela["data_alvo"].max() + pd.Timedelta(days=4))
+    ax_dir.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m"))
+    ax_dir.xaxis.set_major_locator(mdates.AutoDateLocator(minticks=6, maxticks=12))
+
+    fig.suptitle(
+        f"Solana — preço real × estimado pelo modelo, "
+        f"{conhecidos['data_alvo'].min():%d/%m/%Y} a {conhecidos['data_alvo'].max():%d/%m/%Y}",
+        x=0.06, ha="left", fontsize=12, color=COR_TEXTO,
+    )
+    fig.text(0.06, 0.915, "Trabalho acadêmico — estimativas de modelo, não recomendação "
+             "de investimento.", fontsize=8.5, color=COR_TEXTO_SEC)
+    fig.subplots_adjust(left=0.10, right=0.97, top=0.88, bottom=0.14)
+
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(caminho, dpi=130, facecolor=COR_SUPERFICIE)
+    plt.close(fig)
+
+
+def escrever_relatorio(
+    caminho: Path,
+    *,
+    tabela: pd.DataFrame,
     resumo_reg: dict,
     nome_classificador: str,
     nome_regressor: str,
     selecao_clf: pd.DataFrame,
     selecao_reg: pd.DataFrame,
     n_treino_selecao: int,
+    grafico: Path,
 ) -> None:
-    """Escreve o relatório de previsões em Markdown."""
+    """Escreve o relatório de previsões em Markdown (tabela única + gráfico)."""
     agora = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    conhecidos = tabela[tabela["preco_alvo"].notna()]
+    pendente = tabela[tabela["preco_alvo"].isna()]
+    n = len(conhecidos)
+    acertos = int(conhecidos["acertou"].astype(bool).sum())
+    # faixa central de 95% dos acertos de uma moeda honesta (binomial n, 0,5)
+    acaso_min, acaso_max = (int(v) for v in binom.interval(0.95, n, 0.5))
+    dentro_do_acaso = acaso_min <= acertos <= acaso_max
+    melhor_que_persist = resumo_reg["mae"] < resumo_reg["mae_persistencia"]
     p: list[str] = []
 
-    p.append("# Previsões do dia seguinte — Solana\n")
+    p.append("# Previsões × preço real — Solana\n")
     p.append(
         "**Trabalho acadêmico.** As previsões abaixo são estimativas de modelos "
         "estatísticos a partir de padrões passados, condicionadas ao período "
@@ -434,151 +583,114 @@ def escrever_relatorio(
         "investimento.\n"
     )
     p.append(f"- Gerado em: `{agora}`")
-    p.append(f"- Entrada: `{ENTRADA.relative_to(RAIZ)}`")
     p.append(
-        f"- Janela exibida: **{historico['data_alvo'].min().date()} a "
-        f"{historico['data_alvo'].max().date()}** ({len(historico)} dias com "
-        "resultado conhecido) + o dia seguinte"
+        f"- Período comparado: **{conhecidos['data_alvo'].min():%d/%m/%Y} a "
+        f"{conhecidos['data_alvo'].max():%d/%m/%Y}** ({n} dias com preço real conhecido)"
     )
-    p.append(f"- Classificador: `{nome_classificador}` · Regressor: `{nome_regressor}` "
-             "(escolhidos na seção 3)")
+    p.append(f"- Modelos: direção `{nome_classificador}` · preço `{nome_regressor}`")
+    p.append("- Preços: instantâneos diários de 00:00 UTC (CoinGecko), em USD\n")
+
+    # --- resumo
+    p.append("## Resumo\n")
+    p.append(tabela_md(
+        ["", "resultado"],
+        [
+            ["Direção (sobe / não sobe)",
+             f"**{acertos} de {n}** dias classificados corretamente ({acertos / n:.0%})"],
+            ["Por acaso (moeda honesta)",
+             f"entre {acaso_min} e {acaso_max} acertos em 95% das vezes"],
+            ["Erro médio do preço estimado",
+             f"{resumo_reg['mae']:.2f} USD ({resumo_reg['mape']:.1%})"],
+            ["Erro de \"amanhã = hoje\" (persistência)",
+             f"{resumo_reg['mae_persistencia']:.2f} USD "
+             f"({resumo_reg['mape_persistencia']:.1%})"],
+        ],
+    ))
+    p.append(
+        "\n> "
+        + ("A taxa de acerto da direção está **dentro** da faixa do acaso: não se "
+           "distingue de cara-ou-coroa. " if dentro_do_acaso else
+           "A taxa de acerto da direção ficou **fora** da faixa do acaso nesta janela, "
+           "o que não garante que se repita em outro período. ")
+        + ("O preço estimado errou **menos** que repetir o preço de hoje, por pouca "
+           "diferença.\n" if melhor_que_persist else
+           "O preço estimado **não** errou menos que simplesmente repetir o preço de "
+           "hoje — resultado esperado no horizonte de um dia.\n")
+    )
+
+    if not pendente.empty:
+        amanha = pendente.iloc[-1]
+        p.append(
+            f"**Próximo dia ({amanha['data_alvo']:%d/%m/%Y}, ainda não aconteceu):** "
+            f"direção classificada como **{ROTULOS[int(amanha['classificado'])]}**; "
+            f"preço estimado **{amanha['preco_estimado']:.2f} USD** "
+            f"({amanha['ret_estimado']:+.2%} sobre {amanha['preco_base']:.2f} USD).\n"
+        )
+
+    # --- gráfico
+    p.append("## Gráfico\n")
+    p.append(f"![Preço real × estimado]({grafico.name})\n")
+
+    # --- tabela dia a dia
+    p.append("## Dia a dia\n")
+    p.append(
+        "Cada linha foi prevista **antes** de o dia acontecer: o modelo foi treinado só "
+        "com os dias anteriores. *Véspera* é o preço do dia anterior (o ponto de "
+        "partida); *erro* = estimado − real.\n"
+    )
+    linhas = []
+    for _, r in tabela.iterrows():
+        if pd.isna(r["preco_alvo"]):
+            linhas.append([
+                f"**{r['data_alvo']:%d/%m/%Y}**", f"{r['preco_base']:.2f}",
+                f"**{r['preco_estimado']:.2f}**", "aguardando", "—", "—",
+                f"**{ROTULOS[int(r['classificado'])]}**", "aguardando", "",
+            ])
+            continue
+        linhas.append([
+            f"{r['data_alvo']:%d/%m/%Y}", f"{r['preco_base']:.2f}",
+            f"{r['preco_estimado']:.2f}", f"{r['preco_alvo']:.2f}",
+            f"{r['erro']:+.2f} ({r['erro_pct']:+.1%})", f"{r['variacao_real']:+.1%}",
+            ROTULOS[int(r["classificado"])], ROTULOS[int(r["observado"])],
+            "✓" if bool(r["acertou"]) else "✗",
+        ])
+    p.append(tabela_md(
+        ["dia", "véspera (USD)", "estimado (USD)", "real (USD)", "erro",
+         "variação real", "direção classificada", "direção real", "acertou?"],
+        linhas,
+    ))
     p.append("")
 
-    p.append("## Protocolo\n")
-    p.append(
-        "Walk-forward expansivo: para cada dia `d` da janela, o modelo é ajustado "
-        "**apenas com os dias anteriores a `d`** e então prevê `d`. Os atributos "
-        "de `d` usam só dados até `d`; o dia seguinte (`d+1`) entra apenas como "
-        "gabarito, depois da previsão — nunca como atributo. A linha do dia "
-        "seguinte real é só mais um passo do mesmo laço, então o histórico é "
-        "comparável a ela.\n"
-    )
-
-    # --- 1. direção
-    p.append(f"## 1. Direção do dia seguinte — {nome_classificador}\n")
-    p.append(
-        tabela_md(
-            ["dia", "véspera (USD)", "dia (USD)", "variação", "classificado",
-             "observado", ""],
-            [
-                [
-                    r["data_alvo"].date(), f"{r['preco_base']:.2f}",
-                    f"{r['preco_alvo']:.2f}",
-                    f"{r['preco_alvo'] / r['preco_base'] - 1:+.1%}",
-                    ROTULOS[r["classificado"]], ROTULOS[r["observado"]],
-                    "✓" if r["acertou"] else "✗",
-                ]
-                for _, r in historico.iterrows()
-            ] + [[
-                f"**{previsao['data_alvo'].date()}**", f"{previsao['preco_base']:.2f}",
-                "—", "—", f"**{ROTULOS[previsao['classificado']]}**", "(pendente)", "",
-            ]],
-        )
-    )
-    acertos = int(historico["acertou"].sum())
-    p.append(
-        f"\n> Acertos na janela: **{acertos}/{len(historico)}** "
-        f"({acertos / len(historico):.0%}). Com {len(historico)} dias, uma moeda "
-        f"honesta fica entre {max(0, len(historico) // 2 - 2)} e "
-        f"{len(historico) // 2 + 3} acertos na maior parte das vezes — a "
-        "janela é curta demais para distinguir habilidade de acaso.\n"
-    )
-
-    # --- 2. preço
-    p.append(f"## 2. Preço do dia seguinte — {nome_regressor}\n")
-    p.append(
-        "O regressor estima o **retorno** de `t -> t+1`; o preço estimado é "
-        "`preço de hoje × (1 + retorno estimado)`. Erro = estimado − observado.\n"
-    )
-    p.append(
-        tabela_md(
-            ["dia", "véspera (USD)", "estimado (USD)", "observado (USD)", "erro (USD)",
-             "erro %", "direção"],
-            [
-                [
-                    r["data_alvo"].date(), f"{r['preco_base']:.2f}",
-                    f"{r['preco_estimado']:.2f}", f"{r['preco_alvo']:.2f}",
-                    f"{r['erro']:+.2f}", f"{r['erro_pct']:+.1%}",
-                    "✓" if r["direcao_ok"] else "✗",
-                ]
-                for _, r in historico_reg.iterrows()
-            ] + [[
-                f"**{previsao_reg['data_alvo'].date()}**",
-                f"{previsao_reg['preco_base']:.2f}",
-                f"**{previsao_reg['preco_estimado']:.2f}** "
-                f"({previsao_reg['ret_estimado']:+.2%})",
-                "(pendente)", "—", "—", "",
-            ]],
-        )
-    )
-    p.append("\n**Erro na janela, contra o baseline de persistência** "
-             "(\"o preço de amanhã é o de hoje\"):\n")
-    p.append(
-        tabela_md(
-            ["", "MAE (USD)", "RMSE (USD)", "erro % médio"],
-            [
-                [nome_regressor, f"{resumo_reg['mae']:.2f}", f"{resumo_reg['rmse']:.2f}",
-                 f"{resumo_reg['mape']:.2%}"],
-                ["Baseline: persistência", f"{resumo_reg['mae_persistencia']:.2f}",
-                 f"{resumo_reg['rmse_persistencia']:.2f}",
-                 f"{resumo_reg['mape_persistencia']:.2%}"],
-            ],
-        )
-    )
-    melhor_que_persist = resumo_reg["mae"] < resumo_reg["mae_persistencia"]
-    p.append(
-        f"\n> Direção acertada pelo sinal do retorno estimado: "
-        f"**{resumo_reg['acertos_direcao']}/{resumo_reg['n']}**. "
-        + (
-            "O regressor errou **menos** que a persistência nesta janela — "
-            "diferença pequena, sobre poucos dias, que pode não se repetir.\n"
-            if melhor_que_persist
-            else "O regressor **não** superou a persistência nesta janela: repetir "
-            "o preço de hoje teria errado menos. É o resultado esperado para "
-            "preço no dia seguinte.\n"
-        )
-    )
-
-    # --- 3. seleção
-    p.append("## 3. Como os modelos foram escolhidos\n")
+    # --- como os modelos foram escolhidos
+    p.append("## Como os modelos foram escolhidos\n")
     p.append(
         f"`TimeSeriesSplit` com {N_SPLITS_SELECAO} partições sobre os "
-        f"{n_treino_selecao} dias **anteriores** à janela exibida — nenhum dia "
-        "previsto acima participou da escolha.\n"
+        f"{n_treino_selecao} dias **anteriores** ao período comparado — nenhum dia "
+        "da tabela acima participou da escolha.\n"
     )
-    p.append("**Classificador** (critério: maior acurácia balanceada média):\n")
-    p.append(
-        tabela_md(
-            ["modelo", "acurácia balanceada média", "desvio"],
-            [[r["modelo"], f"{r['acuracia_balanceada_media']:.3f}",
-              f"{r['acuracia_balanceada_desvio']:.3f}"]
-             for _, r in selecao_clf.iterrows()],
-        )
-    )
-    p.append("\n**Regressor** (critério: menor RMSE médio do retorno diário):\n")
-    p.append(
-        tabela_md(
-            ["modelo", "RMSE médio do retorno", "desvio"],
-            [[r["modelo"], f"{r['rmse_media']:.4f}", f"{r['rmse_desvio']:.4f}"]
-             for _, r in selecao_reg.iterrows()],
-        )
-    )
-    p.append(
-        "\n> Acurácia balanceada de 0,5 é o acaso. Se o baseline *retorno zero* "
-        "aparece no topo da tabela de regressores, nenhum deles aprendeu algo além "
-        "de \"amanhã ≈ hoje\" — o escolhido é apenas o menos ruim entre os modelos.\n"
-    )
+    p.append("**Direção** (critério: maior acurácia balanceada média; 0,5 = acaso):\n")
+    p.append(tabela_md(
+        ["modelo", "acurácia balanceada média", "desvio"],
+        [[r["modelo"], f"{r['acuracia_balanceada_media']:.3f}",
+          f"{r['acuracia_balanceada_desvio']:.3f}"]
+         for _, r in selecao_clf.iterrows()],
+    ))
+    p.append("\n**Preço** (critério: menor RMSE médio do retorno diário):\n")
+    p.append(tabela_md(
+        ["modelo", "RMSE médio do retorno", "desvio"],
+        [[r["modelo"], f"{r['rmse_media']:.4f}", f"{r['rmse_desvio']:.4f}"]
+         for _, r in selecao_reg.iterrows()],
+    ))
+    p.append("")
 
     p.append("## Ressalvas\n")
     p.append(
-        "- Os preços são instantâneos de 00:00 UTC; \"amanhã\" é o próximo "
-        "instantâneo, não o fechamento de um pregão.\n"
-        "- A avaliação formal, em teste retido de 30% da série, mostra desempenho "
-        "**próximo do acaso** para direção; para o preço, a persistência é uma "
-        "referência que modelos simples raramente superam no horizonte de um dia.\n"
-        "- Cada linha usa um modelo reajustado só com o passado, então o histórico "
-        "não é uma medida otimista de dentro da amostra — mas a janela é curta e "
-        "não sustenta conclusões sobre o futuro.\n"
+        "- \"Amanhã\" é o próximo instantâneo de 00:00 UTC, não o fechamento de um pregão.\n"
+        "- O preço estimado parte do preço da véspera, por isso acompanha de perto a "
+        "curva real: o que importa é o erro comparado ao de repetir o preço de hoje.\n"
+        "- Cada linha usa um modelo reajustado só com o passado, então a tabela não é "
+        "uma medida otimista de dentro da amostra — mas o período é curto e não "
+        "sustenta conclusões sobre o futuro.\n"
     )
 
     caminho.write_text("\n".join(p), encoding="utf-8")
@@ -587,7 +699,23 @@ def escrever_relatorio(
 # ----------------------------------------------------------------------
 # Orquestração
 # ----------------------------------------------------------------------
+def ler_argumentos() -> argparse.Namespace:
+    """Lê a linha de comando (tamanho da janela exibida)."""
+    parser = argparse.ArgumentParser(
+        description="Previsões do dia seguinte da Solana com histórico dia a dia."
+    )
+    parser.add_argument(
+        "--dias", type=int, default=DIAS_HISTORICO,
+        help=f"quantos dias recentes re-prever no relatório (padrão: {DIAS_HISTORICO})",
+    )
+    args = parser.parse_args()
+    if args.dias < 1:
+        parser.error("--dias deve ser pelo menos 1")
+    return args
+
+
 def main() -> None:
+    n_dias = ler_argumentos().dias
     SAIDA.parent.mkdir(parents=True, exist_ok=True)
     SAIDA_RELATORIO.parent.mkdir(parents=True, exist_ok=True)
 
@@ -599,7 +727,11 @@ def main() -> None:
         )
 
     # --- escolha dos modelos: só com os dias anteriores à janela exibida
-    inicio_janela = max(len(rotulados) - DIAS_HISTORICO, 1)
+    # a seleção precisa de dias anteriores suficientes para N_SPLITS_SELECAO partições
+    n_dias = min(n_dias, len(rotulados) - 2 * (N_SPLITS_SELECAO + 1))
+    if n_dias < 1:
+        raise SystemExit("Histórico curto demais para separar seleção e janela exibida.")
+    inicio_janela = len(rotulados) - n_dias
     anteriores = rotulados.iloc[:inicio_janela]
     nome_clf, selecao_clf = selecionar_classificador(anteriores)
     nome_reg, selecao_reg = selecionar_regressor(anteriores)
@@ -611,12 +743,12 @@ def main() -> None:
           f"à janela: {nome_clf} (direção), {nome_reg} (preço)")
 
     # --- direção
-    historico = classificar_historico(rotulados, precos_por_data, nome_clf)
+    historico = classificar_historico(rotulados, precos_por_data, nome_clf, n_dias)
     imprimir_historico(historico)
     previsao = classificar_dia_seguinte(rotulados, a_prever, nome_clf)
 
     # --- preço
-    historico_reg = estimar_historico(rotulados, precos_por_data, nome_reg)
+    historico_reg = estimar_historico(rotulados, precos_por_data, nome_reg, n_dias)
     resumo_reg = resumir_regressao(historico_reg)
     imprimir_historico_regressao(historico_reg, resumo_reg)
     previsao_reg = estimar_dia_seguinte(rotulados, a_prever, nome_reg)
@@ -635,20 +767,22 @@ def main() -> None:
     todas_reg["direcao_ok"] = todas_reg["direcao_ok"].astype("boolean")
     todas_reg.to_parquet(SAIDA_REGRESSAO, index=False)
 
+    tabela = consolidar(historico, previsao, historico_reg, previsao_reg)
+    desenhar_grafico(tabela, SAIDA_GRAFICO, nome_reg, nome_clf)
     escrever_relatorio(
         SAIDA_RELATORIO,
-        historico=historico,
-        previsao=previsao,
-        historico_reg=historico_reg,
-        previsao_reg=previsao_reg,
+        tabela=tabela,
         resumo_reg=resumo_reg,
         nome_classificador=nome_clf,
         nome_regressor=nome_reg,
         selecao_clf=selecao_clf,
         selecao_reg=selecao_reg,
         n_treino_selecao=inicio_janela,
+        grafico=SAIDA_GRAFICO,
     )
-    print(f"\n  Relatório: {SAIDA_RELATORIO}\n")
+    print(f"\n  Relatório: {SAIDA_RELATORIO}")
+    print(f"  Gráfico:   {SAIDA_GRAFICO}")
+    print("  (no VS Code, abra o .md e tecle Ctrl+Shift+V para ver formatado)\n")
 
 
 if __name__ == "__main__":
