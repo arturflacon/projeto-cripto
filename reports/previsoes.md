@@ -2,23 +2,23 @@
 
 **Trabalho acadêmico.** As previsões abaixo são estimativas de modelos estatísticos a partir de padrões passados, condicionadas ao período analisado. Não são previsão confiável do mercado nem recomendação de investimento.
 
-- Gerado em: `2026-11-10T00:47:22+00:00`
-- Período comparado: **27/09/2026 a 10/11/2026** (45 dias com preço real conhecido)
-- Modelos: direção `Naive Bayes` · preço `KNN`
+- Gerado em: `2026-11-17T00:23:23+00:00`
+- Período comparado: **18/07/2026 a 31/08/2026** (45 dias com preço real conhecido)
+- Modelos: direção `SVM (RBF)` · preço `KNN`
 - Preços: instantâneos diários de 00:00 UTC (CoinGecko), em USD
 
 ## Resumo
 
 |  | resultado |
 | --- | --- |
-| Direção (sobe / não sobe) | **26 de 45** dias classificados corretamente (58%) |
+| Direção (sobe / não sobe) | **16 de 45** dias classificados corretamente (36%) |
 | Por acaso (moeda honesta) | entre 16 e 29 acertos em 95% das vezes |
-| Erro médio do preço estimado | 1.65 USD (1.6%) |
-| Erro de "amanhã = hoje" (persistência) | 1.65 USD (1.6%) |
+| Erro médio do preço estimado | 1.84 USD (2.1%) |
+| Erro de "amanhã = hoje" (persistência) | 1.71 USD (2.0%) |
 
 > A taxa de acerto da direção está **dentro** da faixa do acaso: não se distingue de cara-ou-coroa. O preço estimado **não** errou menos que simplesmente repetir o preço de hoje — resultado esperado no horizonte de um dia.
 
-**Próximo dia (11/11/2026, ainda não aconteceu):** direção classificada como **baixa/estável**; preço estimado **85.55 USD** (-1.21% sobre 86.60 USD).
+**Próximo dia (01/09/2026, ainda não aconteceu):** direção classificada como **baixa/estável**; preço estimado **100.48 USD** (-1.18% sobre 101.68 USD).
 
 ## Gráfico
 
@@ -30,52 +30,52 @@ Cada linha foi prevista **antes** de o dia acontecer: o modelo foi treinado só 
 
 | dia | véspera (USD) | estimado (USD) | real (USD) | erro | variação real | direção classificada | direção real | acertou? |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 27/09/2026 | 122.08 | 122.67 | 121.38 | +1.29 (+1.1%) | -0.6% | baixa/estável | baixa/estável | ✓ |
-| 28/09/2026 | 121.38 | 121.17 | 121.96 | -0.78 (-0.6%) | +0.5% | baixa/estável | alta | ✗ |
-| 29/09/2026 | 121.96 | 121.98 | 118.82 | +3.16 (+2.7%) | -2.6% | alta | baixa/estável | ✗ |
-| 30/09/2026 | 118.82 | 118.50 | 119.09 | -0.60 (-0.5%) | +0.2% | alta | alta | ✓ |
-| 01/10/2026 | 119.09 | 118.45 | 118.04 | +0.41 (+0.3%) | -0.9% | alta | baixa/estável | ✗ |
-| 02/10/2026 | 118.04 | 117.94 | 118.38 | -0.44 (-0.4%) | +0.3% | alta | alta | ✓ |
-| 03/10/2026 | 118.38 | 118.35 | 118.59 | -0.24 (-0.2%) | +0.2% | alta | alta | ✓ |
-| 04/10/2026 | 118.59 | 117.80 | 119.60 | -1.80 (-1.5%) | +0.9% | alta | alta | ✓ |
-| 05/10/2026 | 119.60 | 119.81 | 121.52 | -1.71 (-1.4%) | +1.6% | alta | alta | ✓ |
-| 06/10/2026 | 121.52 | 121.08 | 120.76 | +0.32 (+0.3%) | -0.6% | alta | baixa/estável | ✗ |
-| 07/10/2026 | 120.76 | 120.49 | 120.68 | -0.19 (-0.2%) | -0.1% | alta | baixa/estável | ✗ |
-| 08/10/2026 | 120.68 | 120.59 | 116.23 | +4.37 (+3.8%) | -3.7% | alta | baixa/estável | ✗ |
-| 09/10/2026 | 116.23 | 116.31 | 109.51 | +6.80 (+6.2%) | -5.8% | alta | baixa/estável | ✗ |
-| 10/10/2026 | 109.51 | 109.27 | 109.07 | +0.20 (+0.2%) | -0.4% | alta | baixa/estável | ✗ |
-| 11/10/2026 | 109.07 | 109.39 | 110.00 | -0.61 (-0.6%) | +0.8% | alta | alta | ✓ |
-| 12/10/2026 | 110.00 | 109.61 | 111.25 | -1.64 (-1.5%) | +1.1% | alta | alta | ✓ |
-| 13/10/2026 | 111.25 | 111.16 | 105.64 | +5.52 (+5.2%) | -5.0% | alta | baixa/estável | ✗ |
-| 14/10/2026 | 105.64 | 105.54 | 106.75 | -1.21 (-1.1%) | +1.1% | alta | alta | ✓ |
-| 15/10/2026 | 106.75 | 106.73 | 104.19 | +2.53 (+2.4%) | -2.4% | alta | baixa/estável | ✗ |
-| 16/10/2026 | 104.19 | 104.11 | 105.34 | -1.23 (-1.2%) | +1.1% | alta | alta | ✓ |
-| 17/10/2026 | 105.34 | 104.65 | 104.32 | +0.34 (+0.3%) | -1.0% | alta | baixa/estável | ✗ |
-| 18/10/2026 | 104.32 | 103.47 | 103.36 | +0.11 (+0.1%) | -0.9% | alta | baixa/estável | ✗ |
-| 19/10/2026 | 103.36 | 102.45 | 104.00 | -1.55 (-1.5%) | +0.6% | alta | alta | ✓ |
-| 20/10/2026 | 104.00 | 103.24 | 104.98 | -1.74 (-1.7%) | +0.9% | alta | alta | ✓ |
-| 21/10/2026 | 104.98 | 104.77 | 106.39 | -1.62 (-1.5%) | +1.3% | alta | alta | ✓ |
-| 22/10/2026 | 106.39 | 106.19 | 106.94 | -0.75 (-0.7%) | +0.5% | alta | alta | ✓ |
-| 23/10/2026 | 106.94 | 106.73 | 103.54 | +3.19 (+3.1%) | -3.2% | baixa/estável | baixa/estável | ✓ |
-| 24/10/2026 | 103.54 | 102.66 | 102.74 | -0.08 (-0.1%) | -0.8% | baixa/estável | baixa/estável | ✓ |
-| 25/10/2026 | 102.74 | 102.38 | 102.27 | +0.11 (+0.1%) | -0.5% | baixa/estável | baixa/estável | ✓ |
-| 26/10/2026 | 102.27 | 101.99 | 101.24 | +0.75 (+0.7%) | -1.0% | baixa/estável | baixa/estável | ✓ |
-| 27/10/2026 | 101.24 | 101.05 | 100.75 | +0.29 (+0.3%) | -0.5% | baixa/estável | baixa/estável | ✓ |
-| 28/10/2026 | 100.75 | 100.50 | 101.20 | -0.70 (-0.7%) | +0.4% | baixa/estável | alta | ✗ |
-| 29/10/2026 | 101.20 | 100.92 | 102.32 | -1.40 (-1.4%) | +1.1% | baixa/estável | alta | ✗ |
-| 30/10/2026 | 102.32 | 101.92 | 95.47 | +6.44 (+6.7%) | -6.7% | baixa/estável | baixa/estável | ✓ |
-| 31/10/2026 | 95.47 | 93.81 | 96.25 | -2.44 (-2.5%) | +0.8% | baixa/estável | alta | ✗ |
-| 01/11/2026 | 96.25 | 95.34 | 95.42 | -0.08 (-0.1%) | -0.9% | baixa/estável | baixa/estável | ✓ |
-| 02/11/2026 | 95.42 | 94.77 | 94.48 | +0.29 (+0.3%) | -1.0% | baixa/estável | baixa/estável | ✓ |
-| 03/11/2026 | 94.48 | 93.75 | 91.84 | +1.90 (+2.1%) | -2.8% | baixa/estável | baixa/estável | ✓ |
-| 04/11/2026 | 91.84 | 90.78 | 92.78 | -2.00 (-2.2%) | +1.0% | baixa/estável | alta | ✗ |
-| 05/11/2026 | 92.78 | 92.06 | 95.51 | -3.45 (-3.6%) | +2.9% | baixa/estável | alta | ✗ |
-| 06/11/2026 | 95.51 | 94.66 | 89.23 | +5.43 (+6.1%) | -6.6% | baixa/estável | baixa/estável | ✓ |
-| 07/11/2026 | 89.23 | 88.80 | 90.06 | -1.26 (-1.4%) | +0.9% | baixa/estável | alta | ✗ |
-| 08/11/2026 | 90.06 | 89.04 | 89.70 | -0.66 (-0.7%) | -0.4% | baixa/estável | baixa/estável | ✓ |
-| 09/11/2026 | 89.70 | 88.58 | 86.41 | +2.17 (+2.5%) | -3.7% | baixa/estável | baixa/estável | ✓ |
-| 10/11/2026 | 86.41 | 86.17 | 86.60 | -0.43 (-0.5%) | +0.2% | baixa/estável | alta | ✗ |
-| **11/11/2026** | 86.60 | **85.55** | aguardando | — | — | **baixa/estável** | aguardando |  |
+| 18/07/2026 | 75.27 | 75.21 | 75.00 | +0.21 (+0.3%) | -0.4% | alta | baixa/estável | ✗ |
+| 19/07/2026 | 75.00 | 74.91 | 75.48 | -0.57 (-0.8%) | +0.6% | baixa/estável | alta | ✗ |
+| 20/07/2026 | 75.48 | 75.26 | 76.31 | -1.06 (-1.4%) | +1.1% | baixa/estável | alta | ✗ |
+| 21/07/2026 | 76.31 | 76.14 | 77.75 | -1.61 (-2.1%) | +1.9% | alta | alta | ✓ |
+| 22/07/2026 | 77.75 | 78.05 | 78.09 | -0.03 (-0.0%) | +0.4% | alta | alta | ✓ |
+| 23/07/2026 | 78.09 | 78.13 | 77.94 | +0.19 (+0.2%) | -0.2% | alta | baixa/estável | ✗ |
+| 24/07/2026 | 77.94 | 78.03 | 75.85 | +2.18 (+2.9%) | -2.7% | alta | baixa/estável | ✗ |
+| 25/07/2026 | 75.85 | 75.90 | 73.91 | +1.99 (+2.7%) | -2.6% | alta | baixa/estável | ✗ |
+| 26/07/2026 | 73.91 | 73.50 | 74.48 | -0.97 (-1.3%) | +0.8% | alta | alta | ✓ |
+| 27/07/2026 | 74.48 | 74.14 | 76.69 | -2.55 (-3.3%) | +3.0% | alta | alta | ✓ |
+| 28/07/2026 | 76.69 | 76.87 | 74.14 | +2.72 (+3.7%) | -3.3% | alta | baixa/estável | ✗ |
+| 29/07/2026 | 74.14 | 73.57 | 73.77 | -0.21 (-0.3%) | -0.5% | alta | baixa/estável | ✗ |
+| 30/07/2026 | 73.77 | 73.33 | 73.61 | -0.28 (-0.4%) | -0.2% | alta | baixa/estável | ✗ |
+| 31/07/2026 | 73.61 | 73.18 | 74.46 | -1.29 (-1.7%) | +1.2% | baixa/estável | alta | ✗ |
+| 01/08/2026 | 74.46 | 74.34 | 72.79 | +1.54 (+2.1%) | -2.2% | alta | baixa/estável | ✗ |
+| 02/08/2026 | 72.79 | 72.33 | 71.89 | +0.43 (+0.6%) | -1.2% | baixa/estável | baixa/estável | ✓ |
+| 03/08/2026 | 71.89 | 71.23 | 73.55 | -2.32 (-3.2%) | +2.3% | baixa/estável | alta | ✗ |
+| 04/08/2026 | 73.55 | 72.79 | 73.49 | -0.70 (-1.0%) | -0.1% | baixa/estável | baixa/estável | ✓ |
+| 05/08/2026 | 73.49 | 72.90 | 73.71 | -0.81 (-1.1%) | +0.3% | baixa/estável | alta | ✗ |
+| 06/08/2026 | 73.71 | 72.90 | 73.99 | -1.08 (-1.5%) | +0.4% | baixa/estável | alta | ✗ |
+| 07/08/2026 | 73.99 | 73.36 | 72.63 | +0.73 (+1.0%) | -1.8% | baixa/estável | baixa/estável | ✓ |
+| 08/08/2026 | 72.63 | 71.99 | 73.62 | -1.62 (-2.2%) | +1.4% | baixa/estável | alta | ✗ |
+| 09/08/2026 | 73.62 | 73.43 | 75.96 | -2.53 (-3.3%) | +3.2% | alta | alta | ✓ |
+| 10/08/2026 | 75.96 | 75.61 | 76.21 | -0.61 (-0.8%) | +0.3% | baixa/estável | alta | ✗ |
+| 11/08/2026 | 76.21 | 75.85 | 75.92 | -0.08 (-0.1%) | -0.4% | alta | baixa/estável | ✗ |
+| 12/08/2026 | 75.92 | 75.69 | 76.22 | -0.53 (-0.7%) | +0.4% | baixa/estável | alta | ✗ |
+| 13/08/2026 | 76.22 | 75.88 | 75.56 | +0.32 (+0.4%) | -0.9% | alta | baixa/estável | ✗ |
+| 14/08/2026 | 75.56 | 75.39 | 76.20 | -0.81 (-1.1%) | +0.9% | baixa/estável | alta | ✗ |
+| 15/08/2026 | 76.20 | 76.21 | 75.34 | +0.88 (+1.2%) | -1.1% | alta | baixa/estável | ✗ |
+| 16/08/2026 | 75.34 | 75.27 | 75.28 | -0.01 (-0.0%) | -0.1% | baixa/estável | baixa/estável | ✓ |
+| 17/08/2026 | 75.28 | 75.26 | 74.55 | +0.71 (+1.0%) | -1.0% | baixa/estável | baixa/estável | ✓ |
+| 18/08/2026 | 74.55 | 74.51 | 75.97 | -1.47 (-1.9%) | +1.9% | baixa/estável | alta | ✗ |
+| 19/08/2026 | 75.97 | 76.03 | 77.00 | -0.98 (-1.3%) | +1.4% | baixa/estável | alta | ✗ |
+| 20/08/2026 | 77.00 | 77.02 | 85.33 | -8.32 (-9.7%) | +10.8% | baixa/estável | alta | ✗ |
+| 21/08/2026 | 85.33 | 84.79 | 87.65 | -2.86 (-3.3%) | +2.7% | baixa/estável | alta | ✗ |
+| 22/08/2026 | 87.65 | 87.57 | 93.69 | -6.12 (-6.5%) | +6.9% | alta | alta | ✓ |
+| 23/08/2026 | 93.69 | 94.23 | 93.88 | +0.34 (+0.4%) | +0.2% | alta | alta | ✓ |
+| 24/08/2026 | 93.88 | 94.39 | 95.41 | -1.01 (-1.1%) | +1.6% | alta | alta | ✓ |
+| 25/08/2026 | 95.41 | 95.55 | 98.87 | -3.32 (-3.4%) | +3.6% | alta | alta | ✓ |
+| 26/08/2026 | 98.87 | 99.55 | 96.58 | +2.98 (+3.1%) | -2.3% | alta | baixa/estável | ✗ |
+| 27/08/2026 | 96.58 | 96.50 | 102.05 | -5.55 (-5.4%) | +5.7% | alta | alta | ✓ |
+| 28/08/2026 | 102.05 | 102.66 | 109.18 | -6.52 (-6.0%) | +7.0% | alta | alta | ✓ |
+| 29/08/2026 | 109.18 | 110.36 | 104.11 | +6.25 (+6.0%) | -4.6% | alta | baixa/estável | ✗ |
+| 30/08/2026 | 104.11 | 104.05 | 105.59 | -1.55 (-1.5%) | +1.4% | baixa/estável | alta | ✗ |
+| 31/08/2026 | 105.59 | 105.65 | 101.68 | +3.97 (+3.9%) | -3.7% | alta | baixa/estável | ✗ |
+| **01/09/2026** | 101.68 | **100.48** | aguardando | — | — | **baixa/estável** | aguardando |  |
 
 ## Como os modelos foram escolhidos
 
@@ -85,21 +85,21 @@ Cada linha foi prevista **antes** de o dia acontecer: o modelo foi treinado só 
 
 | modelo | acurácia balanceada média | desvio |
 | --- | --- | --- |
-| Naive Bayes | 0.521 | 0.019 |
-| Perceptron | 0.513 | 0.059 |
-| KNN | 0.512 | 0.041 |
-| Árvore de decisão | 0.505 | 0.035 |
-| SVM (RBF) | 0.501 | 0.042 |
+| SVM (RBF) | 0.528 | 0.034 |
+| Perceptron | 0.516 | 0.028 |
+| KNN | 0.496 | 0.063 |
+| Árvore de decisão | 0.457 | 0.054 |
+| Naive Bayes | 0.454 | 0.046 |
 
 **Preço** (critério: menor RMSE médio do retorno diário):
 
 | modelo | RMSE médio do retorno | desvio |
 | --- | --- | --- |
-| Baseline: retorno zero | 0.0287 | 0.0082 |
-| KNN | 0.0295 | 0.0082 |
-| SVR (RBF) | 0.0321 | 0.0059 |
-| Árvore de decisão | 0.0392 | 0.0121 |
-| Ridge (linear) | 0.0511 | 0.0150 |
+| Baseline: retorno zero | 0.0337 | 0.0079 |
+| KNN | 0.0350 | 0.0070 |
+| SVR (RBF) | 0.0356 | 0.0111 |
+| Árvore de decisão | 0.0450 | 0.0164 |
+| Ridge (linear) | 0.0630 | 0.0463 |
 
 ## Ressalvas
 

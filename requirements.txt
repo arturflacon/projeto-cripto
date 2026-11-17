@@ -6,9 +6,10 @@ scikit-learn
 scipy
 matplotlib
 
-# EDA em notebook (Encontros 5-6)
+# Notebooks (EDA e trabalho final) — nbconvert executa o notebook de entrega
 ipykernel
 notebook
+nbconvert
 
 # Dashboard (Encontro 13)
 streamlit

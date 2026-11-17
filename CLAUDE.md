@@ -22,34 +22,58 @@ NÃO são feitos entre ativos. Eles são reenquadrados sobre o **tempo**:
 
 ---
 
-## Estado atual do repositório
+## Estado atual do repositório (atualizado em 2026-11-16 — pipeline COMPLETO)
+
+Todas as etapas estão implementadas e funcionando. Não há stubs.
 
 ```
 projeto-cripto/
 ├── data/
 │   ├── raw/          # respostas brutas da API (não versionadas)
-│   └── processed/    # tabelas em Parquet
-├── notebooks/        # análise exploratória
+│   ├── snapshot/     # solana_365d.csv — base OFICIAL congelada (versionada)
+│   └── processed/    # Parquets gerados pelo pipeline (não versionados)
+├── notebooks/
+│   ├── eda_solana.ipynb      # EDA (Enc. 5-6), 7 visualizações
+│   └── trabalho_final.ipynb  # NOTEBOOK DE ENTREGA — 7 etapas do plano de atividades
 ├── src/
-│   ├── collect.py        # PRONTO — ver nota abaixo
-│   ├── preprocess.py     # stub (TAREFA ATUAL)
-│   ├── features.py       # stub
-│   ├── clustering.py     # stub
-│   └── classification.py # stub
-├── app/
-├── reports/
+│   ├── collect.py        # coleta CoinGecko (só `solana`) ou snapshot (USAR_SNAPSHOT=1)
+│   ├── preprocess.py     # limpeza/qualidade -> precos_limpo.parquet (contagens no terminal)
+│   ├── features.py       # 13 atributos só com passado + rótulo y -> atributos.parquet
+│   ├── clustering.py     # regimes (K-Means, Ward, DBSCAN) + PCA -> regimes.parquet
+│   ├── classification.py # direção do dia seguinte -> reports/classificacao.md
+│   ├── regression.py     # volatilidade futura (resultados no terminal)
+│   └── prever.py         # walk-forward do dia seguinte -> reports/previsoes.md/.png
+├── tests/test_vazamento.py  # 9 verificações de vazamento temporal (todas passam)
+├── app/dashboard.py         # painel Streamlit
+├── reports/                 # classificacao.md, previsoes.md, previsoes.png
 ├── requirements.txt
 └── README.md
 ```
 
-**`collect.py` já funciona**, mas está configurado para baixar as N maiores moedas por
-capitalização. **Passo 0 desta sessão: ajustar `collect.py` para coletar apenas `solana`** —
-trocar a seleção por market cap por um único id fixo/configurável, mantendo o resto
-(endpoint `/coins/{id}/market_chart`, `days=365`, salvar JSON bruto em `data/raw/` e a
-tabela longa em Parquet).
+**Base oficial:** `data/snapshot/solana_365d.csv` (2025-09-01 a 2026-08-31). Para reproduzir os
+números entregues, rodar o pipeline com `USAR_SNAPSHOT=1` (sem a variável, `collect.py` busca a
+janela móvel atual da API e os números mudam). 365 dias -> 274 linhas com atributos e rótulo
+(90 de aquecimento da janela de 90 dias + 1 último dia sem rótulo).
 
-**Tabela gerada `data/processed/precos.parquet`** (uma observação por ativo-data):
-`id, simbolo, nome, data, preco, capitalizacao, volume, fonte, coletado_em`.
+**Resultados de referência (snapshot):**
+- Classificação (split temporal 70/30: 191 treino / 83 teste; semente 42, KNN k=15, árvore
+  max_depth=3, TimeSeriesSplit 5): **Perceptron** selecionado no walk-forward do treino
+  (0,519 ± 0,083); no teste acc. balanceada **0,575**, F1 0,624, 48/83 acertos, binomial p = 0,094
+  — não distinguível do acaso.
+- Regimes: k=3 (R0 em alta 11 dias, R1 lateral 202, R2 turbulento 61).
+- Regressão: nenhuma das 16 configurações com R² médio > 0 no treino; selecionado KNN h=7.
+- `prever.py` seleciona o classificador numa janela diferente e escolhe **SVM (RBF)** —
+  divergência esperada e documentada no notebook.
+
+**Notebook de entrega (`notebooks/trabalho_final.ipynb`):** reaproveita `collect`/`preprocess`/
+`features` por import; o código das etapas 4-7 (split, pipelines, treino, métricas, uso do
+modelo) fica visível no notebook, com os mesmos hiperparâmetros de `classification.py` — os
+números batem com `reports/classificacao.md`. Inclui contraste com split embaralhado (seção 6.5)
+e classificação do item novo 2026-08-31 -> 2026-09-01. Executar com
+`jupyter nbconvert --to notebook --execute --inplace notebooks/trabalho_final.ipynb`.
+
+**Pendências conhecidas (fora do escopo da entrega):** `app/dashboard.py` cita
+`reports/comparacao_classificadores.md`, mas o relatório real é `reports/classificacao.md`.
 
 ---
 
@@ -71,35 +95,7 @@ tabela longa em Parquet).
 
 ---
 
-## TAREFA ATUAL — Encontro 4: `preprocess.py` (limpeza e qualidade)
-
-Ler a coleta bruta e produzir uma versão limpa + um relatório de qualidade.
-
-**Entrada:** `data/processed/precos.parquet`
-**Saídas:**
-- `data/processed/precos_limpo.parquet` — série diária contínua e limpa da Solana
-- `reports/relatorio_qualidade_dados.md` — o "relatório de problemas" do Encontro 4
-
-**Etapas (seção 7 da apostila):**
-1. Carregar o parquet, ordenar por data, garantir tipos (`data` como datetime; valores numéricos).
-2. Padronizar datas (UTC, sem hora) e **remover duplicidades** por (id, data), registrando a contagem.
-3. Construir um **índice diário contínuo** de `min(data)` a `max(data)` e reindexar para expor **lacunas** (dias ausentes).
-4. **Relatar lacunas:** total de dias ausentes, número de blocos de lacuna, maior lacuna contígua, e as datas.
-5. **Política de preenchimento** (parametrizável, ex.: `LIMIAR_LACUNA_DIAS = 3`):
-   - lacunas curtas (≤ limiar): interpolar preço/capitalização e `ffill` no volume, **marcando** as linhas numa coluna booleana `preenchido`;
-   - lacunas longas (> limiar): **não** preencher artificialmente (a apostila proíbe) — deixar NaN e reportar; oferecer função separada para recortar ao maior trecho contíguo.
-6. **Sanidade de valores:** remover/reportar preço ≤ 0, capitalização ≤ 0, volume negativo.
-7. **"Ativos removidos"** (mecanismo genérico): se um ativo tiver menos que `N_MIN_OBS`
-   observações ou fração de lacunas acima de um limite, removê-lo e registrar `id + motivo`
-   numa tabela do relatório. (Com Solana isso provavelmente não dispara, mas manter o mecanismo.)
-8. Escrever o Parquet limpo e o relatório `.md` com as contagens: nº de observações, período,
-   duplicatas removidas, dias ausentes, maior lacuna, linhas preenchidas, ativos removidos e motivo.
-
-Ao terminar: rodar o script e mostrar o relatório gerado.
-
----
-
-## Roadmap (próximos encontros — já reenquadrado para Solana única)
+## Roadmap original (todas as etapas abaixo já foram implementadas)
 
 - **Enc. 5–6 — EDA** (`notebooks/`): distribuição de preços/retornos (escala log), volatilidade
   ao longo do tempo, drawdown, autocorrelação dos retornos, relação volume × retorno × volatilidade.

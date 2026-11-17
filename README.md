@@ -9,6 +9,28 @@ a série histórica diária da **Solana**.
 > formal mostra desempenho **próximo do acaso** para previsão de direção — ver
 > [Resultados](#resultados).
 
+## Trabalho final (entrega)
+
+O notebook de entrega é **[`notebooks/trabalho_final.ipynb`](notebooks/trabalho_final.ipynb)**,
+organizado pelas 7 etapas do plano de atividades (base → EDA → pré-processamento → divisão →
+treinamento → avaliação → uso do modelo), com código comentado, interpretação após cada saída e
+um apêndice de regressão. Ele já está salvo **com as saídas**.
+
+- **Base:** [`data/snapshot/solana_365d.csv`](data/snapshot/solana_365d.csv) — Solana, 365 dias
+  (2025-09-01 a 2026-08-31), congelada a partir da API pública CoinGecko,
+  endpoint [`/coins/{id}/market_chart`](https://docs.coingecko.com/reference/coins-id-market-chart)
+  (`https://api.coingecko.com/api/v3/coins/solana/market_chart?vs_currency=usd&days=365`).
+- **Problema:** classificação binária — "o preço da Solana fecha amanhã acima de hoje?"
+- **Resultado oficial (split temporal 70/30):** Perceptron, acurácia balanceada 0,575 no teste
+  (48/83 acertos, p ≈ 0,09 contra o acaso). Contraste com split embaralhado incluído.
+- **Item novo:** atributos de 2026-08-31 → classificado como alta para 2026-09-01.
+
+Para reexecutar do zero (não usa a API, exceto numa célula opcional da Etapa 7):
+
+```bash
+jupyter nbconvert --to notebook --execute --inplace notebooks/trabalho_final.ipynb
+```
+
 ## Restrição central: um único ativo
 
 O projeto usa apenas a Solana (id CoinGecko `solana`). Como há um só ativo, o
@@ -46,17 +68,18 @@ Sem a variável, `collect.py` busca dados novos na API — é o diferencial de
 
 ## Pipeline
 
-Rodar em ordem, a partir da raiz do projeto:
+Rodar em ordem, a partir da raiz do projeto (com `USAR_SNAPSHOT=1` para reproduzir os
+números entregues):
 
 | # | Comando | Produz |
 |---|---|---|
 | 1 | `python src/collect.py` | `data/processed/precos.parquet` |
-| 2 | `python src/preprocess.py` | `precos_limpo.parquet` + `reports/relatorio_qualidade_dados.md` |
+| 2 | `python src/preprocess.py` | `precos_limpo.parquet` (contagens de qualidade no terminal) |
 | 3 | `python src/features.py` | `atributos.parquet` (274 linhas × 13 atributos) |
-| 4 | `python src/clustering.py` | `regimes.parquet` + `reports/relatorio_regimes.md` |
-| 5 | `python src/classification.py` | `reports/comparacao_classificadores.md` |
-| 6 | `python src/regression.py` | `reports/relatorio_volatilidade.md` |
-| 7 | `python src/prever.py` | `previsoes.parquet` — classificação do dia seguinte |
+| 4 | `python src/clustering.py` | `regimes.parquet` (resumo dos regimes no terminal) |
+| 5 | `python src/classification.py` | `reports/classificacao.md` |
+| 6 | `python src/regression.py` | resultados no terminal |
+| 7 | `python src/prever.py` | `previsoes.parquet` + `reports/previsoes.md` / `.png` — classificação do dia seguinte |
 
 Análise exploratória (Encontros 5-6), com 7 visualizações e interpretação escrita:
 
@@ -81,7 +104,7 @@ apenas escrito — é verificado:
 python tests/test_vazamento.py
 ```
 
-São 8 verificações. A principal recomputa os atributos sobre uma série **truncada** e
+São 9 verificações. A principal recomputa os atributos sobre uma série **truncada** e
 exige que os valores anteriores ao corte sejam idênticos — se algum atributo olhasse
 adiante, truncar mudaria o passado. O teste foi validado contra quatro tipos de
 vazamento injetado de propósito (`shift` negativo, janela centrada, normalização com
@@ -96,7 +119,8 @@ projeto-cripto/
 │   ├── snapshot/     # série congelada, VERSIONADA — base da reprodução
 │   └── processed/    # tabelas geradas pelo pipeline (não versionado)
 ├── notebooks/
-│   └── eda_solana.ipynb      # EDA (Encontros 5-6)
+│   ├── eda_solana.ipynb      # EDA (Encontros 5-6)
+│   └── trabalho_final.ipynb  # notebook de entrega (7 etapas)
 ├── src/
 │   ├── collect.py            # coleta CoinGecko / snapshot   (Enc. 3)
 │   ├── preprocess.py         # limpeza e relatório de qualidade (Enc. 4)
@@ -106,7 +130,7 @@ projeto-cripto/
 │   ├── regression.py         # volatilidade futura            (Enc. 12)
 │   └── prever.py             # classificação do dia seguinte, walk-forward
 ├── tests/
-│   └── test_vazamento.py     # 8 verificações de vazamento temporal
+│   └── test_vazamento.py     # 9 verificações de vazamento temporal
 ├── app/
 │   └── dashboard.py          # painel Streamlit               (Enc. 13)
 ├── reports/                  # relatórios .md
@@ -138,7 +162,8 @@ Parâmetros no topo de `src/collect.py`: `MOEDA_ID` (ou a variável de ambiente
 
 ## Resultados
 
-Os relatórios completos estão em `reports/`. Em resumo:
+Números da base congelada (`USAR_SNAPSHOT=1`). Relatórios em `reports/`
+(`classificacao.md`, `previsoes.md`) e no notebook de entrega. Em resumo:
 
 **Qualidade dos dados** — a série veio limpa: 365 dias, sem duplicatas, sem lacunas
 e sem valores inválidos.
@@ -161,7 +186,7 @@ a **1,4 desvios** do acaso: dentro do que uma moeda honesta produziria. O result
 **Regressão de volatilidade** — nenhuma das 16 configurações testadas (4 horizontes ×
 4 modelos) obteve R² médio positivo no walk-forward do treino. O relatório documenta
 uma armadilha instrutiva: escolher o horizonte pelo R² **do teste** levaria a
-reportar R² = +0,398, mas o treino coloca essa mesma configuração em 11º lugar entre
+reportar R² = +0,398, mas o treino coloca essa mesma configuração em 14º lugar entre
 16 — era sorte da janela de teste, não capacidade preditiva.
 
 ### A leitura honesta
